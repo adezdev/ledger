@@ -1,5 +1,7 @@
 # Ledger
 
+[![CI](https://github.com/adezdev/ledger/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/adezdev/ledger/actions/workflows/ci.yml)
+
 Turn Git history into an evidence-backed engineering case study.
 
 Ledger reads a Git repository (and, optionally, transcripts of your development sessions) and writes a case study of the project: what was built, how the work unfolded, which technical decisions were made, and what engineering practices are visible. Every claim in the report links to the commit, file, or session excerpt it came from, and is labeled as **observed**, **documented**, or **inferred**.
