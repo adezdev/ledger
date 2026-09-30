@@ -201,35 +201,49 @@ class MinHeap<T> {
   constructor(private readonly compare: (a: T, b: T) => number) {}
 
   push(item: T): void {
-    const items = this.#items;
-    items.push(item);
-    let index = items.length - 1;
+    this.#items.push(item);
+    let index = this.#items.length - 1;
     while (index > 0) {
       const parent = (index - 1) >> 1;
-      if (this.compare(items[index] as T, items[parent] as T) >= 0) break;
-      [items[index], items[parent]] = [items[parent] as T, items[index] as T];
+      if (!this.#less(index, parent)) break;
+      this.#swap(index, parent);
       index = parent;
     }
   }
 
   pop(): T | undefined {
-    const items = this.#items;
-    const top = items[0];
-    const last = items.pop();
-    if (items.length === 0 || last === undefined) return top;
-    items[0] = last;
+    const top = this.#items[0];
+    const last = this.#items.pop();
+    if (this.#items.length === 0 || last === undefined) return top;
+    this.#items[0] = last;
     let index = 0;
     for (;;) {
       const left = index * 2 + 1;
       const right = left + 1;
       let smallest = index;
-      if (left < items.length && this.compare(items[left] as T, items[smallest] as T) < 0) smallest = left;
-      if (right < items.length && this.compare(items[right] as T, items[smallest] as T) < 0) smallest = right;
+      if (left < this.#items.length && this.#less(left, smallest)) smallest = left;
+      if (right < this.#items.length && this.#less(right, smallest)) smallest = right;
       if (smallest === index) break;
-      [items[index], items[smallest]] = [items[smallest] as T, items[index] as T];
+      this.#swap(index, smallest);
       index = smallest;
     }
     return top;
+  }
+
+  #at(index: number): T {
+    const item = this.#items[index];
+    if (item === undefined) throw new RangeError(`heap index ${index} out of range`);
+    return item;
+  }
+
+  #less(a: number, b: number): boolean {
+    return this.compare(this.#at(a), this.#at(b)) < 0;
+  }
+
+  #swap(a: number, b: number): void {
+    const item = this.#at(a);
+    this.#items[a] = this.#at(b);
+    this.#items[b] = item;
   }
 }
 
