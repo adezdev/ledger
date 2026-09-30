@@ -36,11 +36,22 @@ export function classifyCommand(command: string, scripts: Readonly<Record<string
   const scriptName = SCRIPT_RUN.exec(command.trim())?.[1];
   const scriptCommand = scriptName !== undefined ? scripts[scriptName] : undefined;
   if (scriptName !== undefined && scriptCommand !== undefined) result.resolvedScript = { name: scriptName, command: scriptCommand };
-  const subject = expandScripts(command, scripts, new Set()).join("\n");
+  const subject = expandScripts(command, scripts, new Set()).map(substituteVariables).join("\n");
   for (const [purpose, pattern] of PURPOSES) {
     if (pattern.test(subject)) result.purposes.push(purpose);
   }
   return result;
+}
+
+/**
+ * Workflows often run a tool through a variable, as in `${{ env.CARGO }} test`
+ * or `$PYTHON -m pytest`. Reading the variable's name as the command lets the
+ * purpose be recognized; the displayed command is unchanged.
+ */
+function substituteVariables(command: string): string {
+  return command
+    .replace(/\$\{\{\s*env\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g, (_, name: string) => name.toLowerCase())
+    .replace(/\$\{?([A-Z][A-Z0-9_]*)\}?/g, (_, name: string) => name.toLowerCase());
 }
 
 /** Heredoc bodies are data fed to a command, not commands. */
