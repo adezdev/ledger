@@ -116,6 +116,8 @@ Ledger is designed to be safe to point at private and commercial repositories.
 
 What *does* end up in a report: the repository directory name, branch, commit subjects and short SHAs, author display names (for the contributor count, in `report.json`), file paths, excerpts of documentation, and short excerpts from sessions you supplied. Review a report before publishing it, as you would any document.
 
+To report a vulnerability, see [SECURITY.md](SECURITY.md).
+
 ## How it works
 
 ```text
