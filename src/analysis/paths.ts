@@ -14,14 +14,14 @@ const TEST_FILE = [
   /(^|\/)(tests?|spec|specs|testing)\/.+\.[a-z0-9]+$/i,
 ];
 
-const TEST_SUPPORT = /(^|\/)(fixtures?|snapshots?|__snapshots__|testdata|mocks?)\//i;
+const TEST_SUPPORT = /(^|\/)(fixtures?|snapshots?|__snapshots__|__mocks__|testdata|mocks?|helpers?|support|utils?)\//i;
 
 export function isTestFile(path: string): boolean {
   if (isDocumentation(path)) return false;
   return TEST_FILE.some((pattern) => pattern.test(path));
 }
 
-/** Test files that contain tests rather than fixtures or snapshots. */
+/** Test files that contain tests rather than fixtures, snapshots, or helpers. */
 export function isTestSource(path: string): boolean {
   return isTestFile(path) && !TEST_SUPPORT.test(path) && languageOf(path)?.type === "programming";
 }
