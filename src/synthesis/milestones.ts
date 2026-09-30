@@ -9,11 +9,14 @@ export const MAX_MILESTONES = 12;
 
 /** How milestones are formed; shown to readers so the grouping can be judged. */
 export const MILESTONE_METHOD =
-  "Adjacent commits were grouped by shared scopes and directories, commit type, and time proximity; a tagged commit usually ends a milestone. Grouping is Ledger's interpretation of the history.";
+  "Adjacent commits were grouped by shared scopes and directories, commit type, and time proximity; a tagged commit usually ends a milestone. The grouping is Ledger's interpretation of the history.";
 
 const WEIGHTS = { topic: 1.0, kind: 0.4, time: 1.2, size: 0.8, tag: 1.5 };
 /** Gap (in hours) at which the time component of the merge cost saturates: two weeks. */
 const TIME_SATURATION_HOURS = 24 * 14;
+/** Below the target count, neighbors merge only if this close in time and topic. */
+const RELATED_GAP_HOURS = 12;
+const RELATED_TOPIC_SIMILARITY = 0.5;
 
 interface Group {
   index: number;
@@ -29,7 +32,7 @@ interface Group {
   next: Group | null;
 }
 
-/** Target milestone count: roughly the square root of the commit count, capped. */
+/** Most milestones Ledger forms by forced merging: roughly the square root of the commit count, capped. */
 export function targetMilestoneCount(commitCount: number): number {
   return Math.max(1, Math.min(MAX_MILESTONES, Math.round(Math.sqrt(commitCount))));
 }
@@ -65,11 +68,14 @@ export function groupCommits(commits: readonly CommitSummary[], taggedShas: Read
   for (const group of groups) consider(group, group.next);
 
   let remaining = groups.length;
-  while (remaining > target) {
+  for (;;) {
     const candidate = heap.pop();
     if (!candidate) break;
     const { left, right } = candidate;
     if (!left.alive || !right.alive || left.version !== candidate.leftVersion || right.version !== candidate.rightVersion) continue;
+    // Above the target, the cheapest merge always happens. Below it, only
+    // neighbors that clearly continue the same work are merged.
+    if (remaining <= target && !clearlyRelated(left, right)) continue;
     absorb(left, right);
     remaining--;
     consider(left.previous, left);
@@ -142,6 +148,11 @@ function mergeCost(left: Group, right: Group, total: number): number {
     WEIGHTS.size * size +
     (left.endsWithTag ? WEIGHTS.tag : 0)
   );
+}
+
+function clearlyRelated(left: Group, right: Group): boolean {
+  const gapHours = Math.max(0, right.start - left.end) / 3_600_000;
+  return !left.endsWithTag && gapHours <= RELATED_GAP_HOURS && similarity(left.topics, right.topics) >= RELATED_TOPIC_SIMILARITY;
 }
 
 /** Weighted Jaccard similarity of two distributions (each normalized to sum to 1). */
