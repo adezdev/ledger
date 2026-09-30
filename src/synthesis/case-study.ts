@@ -245,7 +245,12 @@ function writeOverview(
     level: "observed",
     category: "structure",
     statement: `${plural(snapshot.files.length, "file")} tracked at HEAD ${code(snapshot.headSha.slice(0, 7))}.`,
-    source: { kind: "file-set", description: "Top-level directories at HEAD", total: snapshot.files.length, paths: topLevel.slice(0, 12).map((directory) => `${directory}/`) },
+    source: {
+      kind: "file-set",
+      description: `Top-level directories at HEAD (${plural(snapshot.files.length, "tracked file")} in total)`,
+      total: topLevel.length,
+      paths: topLevel.slice(0, 12).map((directory) => `${directory}/`),
+    },
   });
   const layout = topLevel.length > 0 ? `, organized under ${joinWords(topLevel.slice(0, 6).map((directory) => code(`${directory}/`)))}${topLevel.length > 6 ? ` and ${topLevel.length - 6} other directories` : ""}` : "";
   statements.push({
@@ -274,7 +279,7 @@ function writeOverview(
   if (tooling.length > 0) {
     const names = tooling.slice(0, 8).map((technology) => technology.name);
     statements.push({
-      text: `Tracked manifests and configuration files point to ${joinWords(names)}${tooling.length > 8 ? `, among ${tooling.length} detected tools` : ""}.`,
+      text: `Tooling identified from tracked manifests and configuration files: ${joinWords(names)}${tooling.length > 8 ? `, among ${tooling.length} in total` : ""}.`,
       level: "observed",
       evidence: tooling.slice(0, 8).flatMap((technology) => technology.evidence.slice(0, 1)),
     });
