@@ -21,7 +21,7 @@ export function formatSummary(result: AnalysisResult, writtenPaths: readonly str
 
   const rows: [string, string][] = [
     ["Project", `${project.name}${stack.length > 0 ? ` (${stack.join(", ")})` : ""}`],
-    ["Commits", `${formatCount(metrics.commits)} analyzed on ${project.branch ?? "detached HEAD"} at ${project.headShortSha}`],
+    ["Commits", `${formatCount(metrics.commits)} analyzed${metrics.automatedCommits > 0 ? ` (${formatCount(metrics.automatedCommits)} automated)` : ""} on ${project.branch ?? "detached HEAD"} at ${project.headShortSha}`],
     ["Timespan", span],
     ["Evidence", `${plural(study.evidence.length, "item")}: ${levels}`],
     ["Timeline", `${plural(study.timeline.length, "milestone")}, ${plural(study.decisions.length, "decision")} (${documented} documented, ${study.decisions.length - documented} inferred)`],

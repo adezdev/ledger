@@ -13,6 +13,8 @@ import {
   LEVEL_DEFINITIONS,
   LEVEL_LABELS,
   MAX_COMMITS_PER_MILESTONE,
+  automatedNote,
+  commitNotes,
   reportHeadline,
 } from "./shared.ts";
 
@@ -68,12 +70,12 @@ export function renderMarkdown(study: CaseStudy): string {
   // Snapshot -------------------------------------------------------------------
   push("## Project snapshot", "", "| Measure | Value |", "| --- | --- |");
   const rows: [string, string][] = [
-    ["Commits analyzed", `${formatCount(metrics.commits)}${metrics.mergeCommits > 0 ? ` (${plural(metrics.mergeCommits, "merge")})` : ""}`],
+    ["Commits analyzed", `${formatCount(metrics.commits)}${commitNotes(metrics).length > 0 ? ` (${commitNotes(metrics).join(", ")})` : ""}`],
     ["Timespan", metrics.timespanDays <= 1 ? `${formatDate(metrics.firstCommitAt)} (1 day)` : `${formatDate(metrics.firstCommitAt)} to ${formatDate(metrics.latestCommitAt)} (${plural(metrics.timespanDays, "day")}, ${formatCount(metrics.activeDays)} active)`],
     ["Contributors", formatCount(metrics.contributors)],
     ["Files tracked at HEAD", formatCount(metrics.trackedFiles)],
     ["Files touched in history", formatCount(metrics.filesTouched)],
-    ["Lines added / removed", `+${formatCount(metrics.additions)} / −${formatCount(metrics.deletions)} (excluding lockfiles and binaries)`],
+    ["Lines added / removed", `+${formatCount(metrics.additions)} / −${formatCount(metrics.deletions)} (excluding lockfiles, binaries${metrics.automatedCommits > 0 ? ", and automated commits" : ""})`],
     ["Test files", formatCount(metrics.testFiles)],
     ["CI configurations", formatCount(metrics.ciConfigurations)],
     ["Documentation files", formatCount(metrics.documentationFiles)],
@@ -91,6 +93,9 @@ export function renderMarkdown(study: CaseStudy): string {
 
   // Timeline ---------------------------------------------------------------------
   push("## Engineering timeline", "", `_${escapeMarkdown(MILESTONE_METHOD)}_`, "");
+  if (metrics.automatedCommits > 0 && metrics.automatedCommits < metrics.commits) {
+    push(`_${escapeMarkdown(automatedNote(metrics))}_`, "");
+  }
   for (const milestone of study.timeline) {
     const span = formatDate(milestone.startAt) === formatDate(milestone.endAt) ? formatDate(milestone.startAt) : `${formatDate(milestone.startAt)} – ${formatDate(milestone.endAt)}`;
     push(`### ${milestone.id} · ${inline(milestone.title)}`, "");

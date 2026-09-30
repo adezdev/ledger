@@ -1,6 +1,6 @@
-import type { CaseStudy, CommitSummary, Decision, EvidenceLevel, EvidenceSource, Finding, FindingArea } from "../domain/model.ts";
+import type { CaseStudy, CommitSummary, Decision, ProjectMetrics, EvidenceLevel, EvidenceSource, Finding, FindingArea } from "../domain/model.ts";
 import { code } from "../domain/statement.ts";
-import { formatDate } from "../synthesis/format.ts";
+import { formatCount, formatDate, plural } from "../synthesis/format.ts";
 
 /** Vocabulary shared by the Markdown and HTML renderers, so both say the same thing. */
 
@@ -94,3 +94,12 @@ export function indexCommits(study: CaseStudy): ReadonlyMap<string, CommitSummar
 }
 
 export const MAX_COMMITS_PER_MILESTONE = 12;
+
+/** Qualifiers for the commit count, such as "2 merges" and "53 automated". */
+export function commitNotes(metrics: ProjectMetrics): string[] {
+  return [metrics.mergeCommits > 0 ? plural(metrics.mergeCommits, "merge") : "", metrics.automatedCommits > 0 ? `${formatCount(metrics.automatedCommits)} automated` : ""].filter(Boolean);
+}
+
+export function automatedNote(metrics: ProjectMetrics): string {
+  return `${plural(metrics.automatedCommits, "automated commit")} by ${metrics.automatedAuthors.join(", ")} ${metrics.automatedCommits === 1 ? "is" : "are"} not part of any milestone.`;
+}

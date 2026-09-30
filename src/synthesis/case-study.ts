@@ -1,5 +1,5 @@
 import { type CiConfiguration, parseCiConfiguration } from "../analysis/ci.ts";
-import { summarizeCommit } from "../analysis/commits.ts";
+import { humanCommits, summarizeCommit } from "../analysis/commits.ts";
 import { type DecisionDraft, decisionsFromCommits, decisionsFromDocuments, inferredToolingDecisions } from "../analysis/decisions.ts";
 import { analyzeEngineering, joinWords } from "../analysis/engineering.ts";
 import { type Manifest, isManifestPath, parseManifest } from "../analysis/manifests.ts";
@@ -22,7 +22,7 @@ import {
 } from "../domain/model.ts";
 import { code } from "../domain/statement.ts";
 import { extractSessionInsights } from "../session/extract.ts";
-import { formatDate, inclusiveDays, isoDate, plural } from "./format.ts";
+import { formatCount, formatDate, inclusiveDays, isoDate, plural } from "./format.ts";
 import { selectCommits } from "./highlights.ts";
 import { buildMilestones, describeKinds } from "./milestones.ts";
 
@@ -39,6 +39,8 @@ export interface CaseStudyInput {
 export function buildCaseStudy({ snapshot, sessions, generatorVersion }: CaseStudyInput): CaseStudy {
   const log = new EvidenceLog();
   const summaries = snapshot.commits.map(summarizeCommit);
+  // Activity, milestones, and highlights describe work by people, not bots.
+  const people = humanCommits(summaries);
   const manifests = readManifests(snapshot);
   const rootManifest = manifests.find((manifest) => !manifest.path.includes("/"));
   const ciConfigurations = readCiConfigurations(snapshot, rootManifest?.scripts ?? {});
@@ -47,9 +49,9 @@ export function buildCaseStudy({ snapshot, sessions, generatorVersion }: CaseStu
   const project = describeProject(snapshot, rootManifest, log);
   const { technologies, languages } = detectTechnologies(snapshot.files, manifests, log);
   const engineering = analyzeEngineering(snapshot, manifests, ciConfigurations, log);
-  const timeline = buildMilestones(summaries, snapshot.tags, log);
+  const timeline = buildMilestones(people, snapshot.tags, log);
 
-  const commitDecisions = decisionsFromCommits(snapshot.commits, log);
+  const commitDecisions = decisionsFromCommits(humanCommits(snapshot.commits), log);
   const sessionInsights = extractSessionInsights(sessions, log);
   const drafts: DecisionDraft[] = [
     ...decisionsFromDocuments(snapshot.documents, log),
@@ -67,10 +69,10 @@ export function buildCaseStudy({ snapshot, sessions, generatorVersion }: CaseStu
       }),
     ),
   );
-  const selectedCommits = selectCommits(summaries, snapshot.commits, timeline, snapshot.tags, decisionShas, log);
+  const selectedCommits = selectCommits(people, snapshot.commits, timeline, snapshot.tags, decisionShas, log);
 
-  const metrics = computeMetrics(snapshot, summaries, engineering, languages);
-  const overview = writeOverview(snapshot, summaries, metrics, technologies, historyEvidence, sessions, log);
+  const metrics = computeMetrics(snapshot, summaries, people, engineering, languages);
+  const overview = writeOverview(snapshot, people, metrics, technologies, historyEvidence, sessions, log);
 
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -187,29 +189,31 @@ export function safeHomepage(value: string): string | undefined {
 function computeMetrics(
   snapshot: RepositorySnapshot,
   summaries: readonly CommitSummary[],
+  people: readonly CommitSummary[],
   engineering: { testFiles: string[]; ciFiles: string[]; documentationFiles: string[] },
   languages: ProjectMetrics["languages"],
 ): ProjectMetrics {
-  const first = summaries[0];
-  const last = summaries.at(-1);
-  const dates = summaries.map((commit) => commit.authoredAt).sort((a, b) => Date.parse(a) - Date.parse(b));
+  const dates = people.map((commit) => commit.authoredAt).sort((a, b) => Date.parse(a) - Date.parse(b));
   const touched = new Set<string>();
-  for (const commit of summaries) for (const change of commit.changes) touched.add(change.path);
-  const firstCommitAt = dates[0] ?? first?.authoredAt ?? "";
-  const latestCommitAt = dates.at(-1) ?? last?.authoredAt ?? "";
+  for (const commit of people) for (const change of commit.changes) touched.add(change.path);
+  const firstCommitAt = dates[0] ?? "";
+  const latestCommitAt = dates.at(-1) ?? firstCommitAt;
+  const automated = summaries.filter((commit) => commit.automated);
 
   return {
     commits: summaries.length,
     mergeCommits: summaries.filter((commit) => commit.isMerge).length,
-    contributors: new Set(summaries.map((commit) => commit.authorName)).size,
+    automatedCommits: automated.length,
+    automatedAuthors: [...new Set(automated.map((commit) => commit.authorName))].sort(),
+    contributors: new Set(people.map((commit) => commit.authorName)).size,
     firstCommitAt,
     latestCommitAt,
     timespanDays: inclusiveDays(firstCommitAt, latestCommitAt),
-    activeDays: new Set(summaries.map((commit) => isoDate(commit.authoredAt))).size,
+    activeDays: new Set(people.map((commit) => isoDate(commit.authoredAt))).size,
     trackedFiles: snapshot.files.length,
     filesTouched: touched.size,
-    additions: summaries.reduce((sum, commit) => sum + commit.additions, 0),
-    deletions: summaries.reduce((sum, commit) => sum + commit.deletions, 0),
+    additions: people.reduce((sum, commit) => sum + commit.additions, 0),
+    deletions: people.reduce((sum, commit) => sum + commit.deletions, 0),
     testFiles: engineering.testFiles.length,
     ciConfigurations: engineering.ciFiles.length,
     documentationFiles: engineering.documentationFiles.length,
@@ -232,8 +236,13 @@ function writeOverview(
       ? `on ${formatDate(metrics.firstCommitAt)}`
       : `between ${formatDate(metrics.firstCommitAt)} and ${formatDate(metrics.latestCommitAt)}, a span of ${plural(metrics.timespanDays, "day")} with commits on ${plural(metrics.activeDays, "day")}`;
   const merges = metrics.mergeCommits > 0 ? ` (${plural(metrics.mergeCommits, "merge")})` : "";
+  const byPeople = metrics.commits - metrics.automatedCommits;
+  const text =
+    metrics.automatedCommits > 0 && byPeople > 0
+      ? `The analyzed history contains ${plural(metrics.commits, "commit")}${merges}: ${formatCount(byPeople)} by ${plural(metrics.contributors, "contributor")}, made ${span}, and ${plural(metrics.automatedCommits, "automated commit")} by ${joinWords(metrics.automatedAuthors.map(code))}.`
+      : `The analyzed history contains ${plural(metrics.commits, "commit")}${merges} by ${plural(metrics.contributors, metrics.automatedCommits > 0 ? "automated account" : "contributor")}, made ${span}.`;
   statements.push({
-    text: `The analyzed history contains ${plural(metrics.commits, "commit")}${merges} by ${plural(metrics.contributors, "contributor")}, made ${span}.`,
+    text,
     level: "observed",
     evidence: [historyEvidence],
   });
@@ -287,6 +296,7 @@ function writeOverview(
 
   const work = summaries.filter((commit) => !commit.isMerge);
   if (work.length >= 2) {
+    // `summaries` here are the commits by people; automated commits are reported above.
     const kinds: Partial<Record<CommitKind, number>> = {};
     for (const commit of work) kinds[commit.classification.kind] = (kinds[commit.classification.kind] ?? 0) + 1;
     const conventionalShare = work.filter((commit) => commit.classification.source === "conventional").length / work.length;
@@ -326,10 +336,17 @@ function writeLimitations(
   const limitations = [
     `Ledger read history reachable from HEAD${snapshot.branch ? ` (${code(snapshot.branch)})` : ""} only; other branches and unpushed work elsewhere are not included.`,
     "Ledger did not build the project, run its tests, or execute CI. Statements about tests and CI describe what is configured, not whether it passes.",
-    "Line counts exclude lockfiles, binary files, and merge commits. Dates are author dates as recorded, which rebases can rewrite.",
+    "Line counts exclude lockfiles, binary files, merge commits, and automated commits. Dates are author dates as recorded, which rebases can rewrite.",
     "Languages are classified by file extension. Milestone grouping and some commit types are Ledger's inferences and are marked as such.",
     "Only tracked metadata, CI configuration, and documentation files were read; source code contents were not inspected.",
   ];
+  const automated = summaries.filter((commit) => commit.automated);
+  if (automated.length > 0 && automated.length < summaries.length) {
+    const names = joinWords([...new Set(automated.map((commit) => commit.authorName))].sort().map(code));
+    limitations.push(
+      `${plural(automated.length, "commit")} by automation accounts (${names}) were recognized by author name and left out of activity figures, milestones, and selected commits. They are still listed in \`report.json\`.`,
+    );
+  }
   if (snapshot.isShallow) limitations.push("The repository is a shallow clone, so history before the shallow boundary is missing.");
   if (summaries.length === 1) limitations.push("The history has a single commit, so there is no development timeline to analyze.");
   if (testFiles === 0) limitations.push("No test files were detected by naming convention; tests embedded in source files (for example Rust unit tests) are not counted.");

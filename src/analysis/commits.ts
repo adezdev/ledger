@@ -90,6 +90,22 @@ export function meaningfulLineCounts(changes: readonly FileChange[]): { addition
   return { additions, deletions };
 }
 
+/**
+ * Automation accounts, recognized by author name: GitHub's "[bot]" suffix and
+ * common bots that commit under a plain name.
+ */
+const AUTOMATED_AUTHOR = /\[bot\]$|^(dependabot|renovate|github-actions|greenkeeper|semantic-release-bot|allcontributors|pre-commit-ci|snyk-bot|imgbot|mergify)(\b|$)/i;
+
+export function isAutomatedAuthor(authorName: string): boolean {
+  return AUTOMATED_AUTHOR.test(authorName.trim());
+}
+
+/** Commits by people. Falls back to every commit when all of them are automated. */
+export function humanCommits<T extends { authorName: string }>(commits: readonly T[]): T[] {
+  const human = commits.filter((commit) => !isAutomatedAuthor(commit.authorName));
+  return human.length > 0 ? human : [...commits];
+}
+
 export function summarizeCommit(commit: Commit): CommitSummary {
   const { additions, deletions } = meaningfulLineCounts(commit.changes);
   return {
@@ -100,6 +116,7 @@ export function summarizeCommit(commit: Commit): CommitSummary {
     subject: commit.subject,
     classification: classifyCommit(commit),
     isMerge: commit.parents.length > 1,
+    automated: isAutomatedAuthor(commit.authorName),
     filesChanged: commit.changes.length,
     additions,
     deletions,

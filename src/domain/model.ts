@@ -186,9 +186,17 @@ export interface LanguageShare {
   share: number;
 }
 
+/**
+ * Activity figures (dates, contributors, files touched, line counts) describe
+ * commits by people. Automated commits are counted separately; if a history
+ * has only automated commits, the activity figures describe those instead.
+ */
 export interface ProjectMetrics {
   commits: number;
   mergeCommits: number;
+  automatedCommits: number;
+  /** Names of the automation accounts behind automatedCommits. */
+  automatedAuthors: string[];
   contributors: number;
   firstCommitAt: string;
   latestCommitAt: string;
@@ -199,7 +207,7 @@ export interface ProjectMetrics {
   trackedFiles: number;
   /** Distinct paths added, modified, deleted, or renamed across the analyzed history. */
   filesTouched: number;
-  /** Lines added across non-merge commits, excluding lockfiles and binary files. */
+  /** Lines added across non-merge commits, excluding lockfiles, binary files, and automated commits. */
   additions: number;
   deletions: number;
   testFiles: number;
@@ -239,6 +247,12 @@ export interface CommitSummary {
   subject: string;
   classification: CommitClassification;
   isMerge: boolean;
+  /**
+   * Authored by an automation account such as github-actions[bot]. Automated
+   * commits stay in the history but are excluded from activity metrics,
+   * milestones, highlights, and commit-based decisions.
+   */
+  automated: boolean;
   filesChanged: number;
   additions: number;
   deletions: number;

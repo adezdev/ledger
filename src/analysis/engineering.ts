@@ -2,7 +2,7 @@ import { code } from "../domain/statement.ts";
 import type { EvidenceLog } from "../domain/evidence.ts";
 import type { Finding, FindingArea, RepositorySnapshot, Statement } from "../domain/model.ts";
 import { type CiConfiguration, type CommandPurpose, classifyCommand } from "./ci.ts";
-import { classifyCommit } from "./commits.ts";
+import { classifyCommit, humanCommits, isAutomatedAuthor } from "./commits.ts";
 import type { Manifest } from "./manifests.ts";
 import {
   baseName,
@@ -51,6 +51,8 @@ export function analyzeEngineering(
     findings.push({ area, statement });
   };
   const paths = snapshot.files.map((file) => file.path).filter((path) => !isVendoredOrGenerated(path));
+  // Commit statistics cover commits by people; say so when automated commits were left out.
+  const commitNoun = snapshot.commits.some((commit) => isAutomatedAuthor(commit.authorName)) ? "non-merge commits by people" : "non-merge commits";
   const testFiles = paths.filter(isTestSource);
   const ciFiles = paths.filter((path) => ciSystemOf(path) !== undefined);
   const documentationFiles = paths.filter(isDocumentation);
@@ -66,17 +68,17 @@ export function analyzeEngineering(
     });
     add("testing", { text: `Repository contains ${testFiles.length} test file${plural(testFiles.length)}.`, level: "observed", evidence: [id] });
 
-    const nonMerge = snapshot.commits.filter((commit) => commit.parents.length <= 1);
+    const nonMerge = humanCommits(snapshot.commits).filter((commit) => commit.parents.length <= 1);
     const touching = nonMerge.filter((commit) => commit.changes.some((change) => isTestSource(change.path) || (change.previousPath !== undefined && isTestSource(change.previousPath))));
     const firstTest = touching[0];
     if (firstTest && nonMerge.length > 1) {
       const rangeId = log.add({
         level: "observed",
         category: "testing",
-        statement: `${touching.length} of ${nonMerge.length} non-merge commits modified test files.`,
+        statement: `${touching.length} of ${nonMerge.length} ${commitNoun} modified test files.`,
         source: { kind: "commit-range", firstSha: firstTest.sha, lastSha: touching.at(-1)?.sha ?? firstTest.sha, count: touching.length, commits: touching.slice(0, 20).map((commit) => commit.shortSha) },
       });
-      add("testing", { text: `Test files were changed in ${touching.length} of ${nonMerge.length} non-merge commits.`, level: "observed", evidence: [rangeId] });
+      add("testing", { text: `Test files were changed in ${touching.length} of ${nonMerge.length} ${commitNoun}.`, level: "observed", evidence: [rangeId] });
       const firstIndex = nonMerge.indexOf(firstTest);
       const firstPath = firstTest.changes.find((change) => isTestSource(change.path))?.path;
       if (firstPath) {
@@ -251,7 +253,7 @@ export function analyzeEngineering(
   }
 
   // Process ----------------------------------------------------------------------------
-  const nonMerge = snapshot.commits.filter((commit) => commit.parents.length <= 1);
+  const nonMerge = humanCommits(snapshot.commits).filter((commit) => commit.parents.length <= 1);
   if (nonMerge.length >= 3) {
     const conventional = nonMerge.filter((commit) => classifyCommit(commit).source === "conventional");
     const share = conventional.length / nonMerge.length;
@@ -261,20 +263,20 @@ export function analyzeEngineering(
       const id = log.add({
         level: "observed",
         category: "history",
-        statement: `${conventional.length} of ${nonMerge.length} non-merge commit subjects use a Conventional Commits prefix.`,
+        statement: `${conventional.length} of ${nonMerge.length} ${commitNoun} use a Conventional Commits prefix.`,
         source: { kind: "commit-range", firstSha: first.sha, lastSha: last.sha, count: nonMerge.length },
       });
-      add("process", { text: `${conventional.length} of ${nonMerge.length} non-merge commits (${Math.round(share * 100)}%) use Conventional Commits prefixes.`, level: "observed", evidence: [id] });
+      add("process", { text: `${conventional.length} of ${nonMerge.length} ${commitNoun} (${Math.round(share * 100)}%) use Conventional Commits prefixes.`, level: "observed", evidence: [id] });
     }
     const withBody = nonMerge.filter((commit) => commit.body.trim().length >= 20);
     if (withBody.length / nonMerge.length >= 0.25 && first && last) {
       const id = log.add({
         level: "observed",
         category: "history",
-        statement: `${withBody.length} of ${nonMerge.length} non-merge commits include a message body.`,
+        statement: `${withBody.length} of ${nonMerge.length} ${commitNoun} include a message body.`,
         source: { kind: "commit-range", firstSha: first.sha, lastSha: last.sha, count: nonMerge.length, commits: withBody.slice(0, 20).map((commit) => commit.shortSha) },
       });
-      add("process", { text: `${withBody.length} of ${nonMerge.length} non-merge commits include a message body describing the change.`, level: "observed", evidence: [id] });
+      add("process", { text: `${withBody.length} of ${nonMerge.length} ${commitNoun} include a message body describing the change.`, level: "observed", evidence: [id] });
     }
   }
 

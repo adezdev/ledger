@@ -14,6 +14,8 @@ import {
   LEVEL_DEFINITIONS,
   LEVEL_LABELS,
   MAX_COMMITS_PER_MILESTONE,
+  automatedNote,
+  commitNotes,
   reportHeadline,
 } from "./shared.ts";
 
@@ -116,7 +118,7 @@ function overviewSection(study: CaseStudy): SafeHtml {
 function snapshotSection(study: CaseStudy): SafeHtml {
   const { metrics } = study;
   const figures: { label: string; value: string; note?: string }[] = [
-    { label: "Commits", value: formatCount(metrics.commits), ...(metrics.mergeCommits > 0 ? { note: `${plural(metrics.mergeCommits, "merge")}` } : {}) },
+    { label: "Commits", value: formatCount(metrics.commits), ...(commitNotes(metrics).length > 0 ? { note: commitNotes(metrics).join(", ") } : {}) },
     { label: "Timespan", value: plural(metrics.timespanDays, "day"), note: `${formatCount(metrics.activeDays)} active` },
     { label: "Contributors", value: formatCount(metrics.contributors) },
     { label: "Files at HEAD", value: formatCount(metrics.trackedFiles), note: `${formatCount(metrics.filesTouched)} touched in history` },
@@ -134,7 +136,7 @@ function snapshotSection(study: CaseStudy): SafeHtml {
   return html`<dl class="figures">${figures.map(
     (figure) => html`<div class="figure"><dt>${figure.label}</dt><dd><span class="figure-value">${figure.value}</span>${figure.note ? html`<span class="figure-note">${figure.note}</span>` : ""}</dd></div>`,
   )}</dl>
-<p class="caption">${range} Line counts exclude lockfiles, binary files, and merge commits.</p>
+<p class="caption">${range} Line counts exclude lockfiles, binary files, merge commits${study.metrics.automatedCommits > 0 ? ", and automated commits" : ""}.</p>
 ${languages.length > 0 ? html`<h3>Language mix</h3>
 <p class="caption">${badge("inferred")} Share of source bytes at HEAD, classified by file extension.</p>
 <ul class="bars">${languages.map((language) => {
@@ -170,7 +172,9 @@ function timelineSection(study: CaseStudy): SafeHtml {
 </details>
 </li>`;
   };
+  const automated = study.metrics.automatedCommits > 0 && study.metrics.automatedCommits < study.metrics.commits;
   return html`<p class="method">${badge("inferred")} ${MILESTONE_METHOD}</p>
+${automated ? html`<p class="caption">${automatedNote(study.metrics)}</p>` : ""}
 <ol class="timeline">${study.timeline.map(item)}</ol>`;
 }
 
