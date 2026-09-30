@@ -241,7 +241,7 @@ const KIND_LABELS: Record<CommitKind, string> = {
   refactor: "Refactoring",
   perf: "Performance work",
   test: "Testing",
-  build: "Build and tooling",
+  build: "Build tooling",
   ci: "Continuous integration",
   chore: "Maintenance",
   revert: "Reverts",
@@ -307,8 +307,15 @@ export function buildMilestones(commits: readonly CommitSummary[], tags: readonl
       }),
     ];
 
-    const dominant = dominantKind(work);
-    const title = [groupTags.at(-1), `${KIND_LABELS[dominant]}${themes.length > 0 ? `: ${joinWords(themes.slice(0, 3))}` : ""}`].filter(Boolean).join(" · ");
+    const label = workLabel(work);
+    const shownThemes = themes.filter((theme) => {
+      const kind = REDUNDANT_THEMES[topicKey(theme)];
+      return !kind || !label.toLowerCase().includes(KIND_LABELS[kind].toLowerCase());
+    });
+    const named = shownThemes.slice(0, 3);
+    const others = shownThemes.length - named.length;
+    const themeText = others > 0 ? `${named.join(", ")}, and ${others} other area${others === 1 ? "" : "s"}` : joinWords(named);
+    const title = [groupTags.at(-1), `${label}${named.length > 0 ? `: ${themeText}` : ""}`].filter(Boolean).join(" · ");
     const span = formatDate(startAt) === formatDate(endAt) ? `on ${formatDate(startAt)}` : `from ${formatDate(startAt)} to ${formatDate(endAt)}`;
     const areas = topAreas(work).map(describeArea);
     const summaryParts = [
@@ -324,7 +331,7 @@ export function buildMilestones(commits: readonly CommitSummary[], tags: readonl
       startAt,
       endAt,
       commits: group.map((commit) => commit.sha),
-      themes,
+      themes: themes.slice(0, 6),
       kinds,
       tags: groupTags,
       additions,
@@ -335,13 +342,40 @@ export function buildMilestones(commits: readonly CommitSummary[], tags: readonl
   });
 }
 
-function dominantKind(commits: readonly CommitSummary[]): CommitKind {
-  const counts = new Map<CommitKind, number>();
-  for (const commit of commits) counts.set(commit.classification.kind, (counts.get(commit.classification.kind) ?? 0) + 1);
-  const [top] = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  if (!top || top[1] / Math.max(1, commits.length) < 0.5) return "other";
-  return top[0];
+/**
+ * "Feature work" when one kind covers 60% of commits, "Fixes and testing" when
+ * two kinds cover 75%, otherwise "Development". Ties go to the kind with more
+ * changed lines, then to a fixed priority.
+ */
+export function workLabel(commits: readonly CommitSummary[]): string {
+  const stats = new Map<CommitKind, { count: number; churn: number }>();
+  for (const commit of commits) {
+    const entry = stats.get(commit.classification.kind) ?? { count: 0, churn: 0 };
+    entry.count++;
+    entry.churn += commit.additions + commit.deletions;
+    stats.set(commit.classification.kind, entry);
+  }
+  const ranked = [...stats.entries()].sort(
+    (a, b) => b[1].count - a[1].count || b[1].churn - a[1].churn || KIND_PRIORITY.indexOf(a[0]) - KIND_PRIORITY.indexOf(b[0]),
+  );
+  const total = Math.max(1, commits.length);
+  const [first, second] = ranked;
+  if (!first || first[0] === "other") return KIND_LABELS.other;
+  if (first[1].count / total >= 0.6) return KIND_LABELS[first[0]];
+  if (second && second[0] !== "other" && (first[1].count + second[1].count) / total >= 0.75) {
+    return `${KIND_LABELS[first[0]]} and ${KIND_LABELS[second[0]].toLowerCase()}`;
+  }
+  return KIND_LABELS.other;
 }
+
+/** Tie-break order when two kinds have the same count and size. */
+const KIND_PRIORITY: CommitKind[] = ["feat", "fix", "perf", "refactor", "test", "docs", "build", "ci", "chore", "style", "revert", "merge", "other"];
+
+/** Themes that merely restate a kind label, such as "docs" under "Documentation". */
+const REDUNDANT_THEMES: Partial<Record<string, CommitKind>> = { docs: "docs", test: "test", ci: "ci" };
+
+/** A theme must carry at least this fraction of the leading theme's weight. */
+const MIN_THEME_WEIGHT = 0.35;
 
 /** Human labels for a milestone's main topics, preferring authors' own scopes over directory names. */
 function milestoneThemes(commits: readonly CommitSummary[]): string[] {
@@ -358,10 +392,11 @@ function milestoneThemes(commits: readonly CommitSummary[]): string[] {
     const scopeKey = commit.classification.scope ? topicKey(commit.classification.scope) : undefined;
     for (const [key, weight] of commitTopics(commit)) if (key !== scopeKey) note(key, key, weight * 0.75);
   }
-  return [...weights.entries()]
-    .filter(([key]) => key !== "project root")
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .slice(0, 3)
+  const ranked = [...weights.entries()].filter(([key]) => key !== "project root").sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  // Areas touched only in passing are not themes of the milestone.
+  const threshold = (ranked[0]?.[1] ?? 0) * MIN_THEME_WEIGHT;
+  return ranked
+    .filter(([, weight]) => weight >= threshold)
     .map(([key]) => [...(labels.get(key) ?? new Map([[key, 1]])).entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? key);
 }
 
