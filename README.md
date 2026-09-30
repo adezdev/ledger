@@ -50,7 +50,7 @@ The report contains:
 Ledger needs [Bun](https://bun.sh) 1.1 or newer and Git 2.31 or newer.
 
 ```sh
-git clone <this repository> ledger
+git clone https://github.com/adezdev/ledger.git
 cd ledger
 bun install
 bun link        # puts `ledger` on your PATH
