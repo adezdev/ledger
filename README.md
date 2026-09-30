@@ -47,7 +47,26 @@ The report contains:
 
 ## Install
 
-Ledger needs [Bun](https://bun.sh) 1.1 or newer and Git 2.31 or newer.
+Ledger needs Git 2.31 or newer.
+
+### Download an executable
+
+Each [release](https://github.com/adezdev/ledger/releases/latest) has standalone executables for Linux, macOS, and Windows on x64 and ARM64. They include the runtime, so nothing else needs installing.
+
+```sh
+# Linux or macOS: pick linux-x64, linux-arm64, darwin-x64, or darwin-arm64
+curl -fLo ledger https://github.com/adezdev/ledger/releases/latest/download/ledger-linux-x64
+chmod +x ledger
+sudo mv ledger /usr/local/bin/
+```
+
+On Windows, download `ledger-windows-x64.exe` or `ledger-windows-arm64.exe` and put it on your `PATH`. Every release includes a `SHA256SUMS` file for verifying downloads.
+
+The executables are not notarized or signed with a developer certificate. On macOS, a file downloaded through a browser needs its quarantine flag cleared (`xattr -d com.apple.quarantine ledger`); on Windows, SmartScreen may ask for confirmation.
+
+### From source
+
+With [Bun](https://bun.sh) 1.1 or newer:
 
 ```sh
 git clone https://github.com/adezdev/ledger.git
@@ -56,7 +75,7 @@ bun install
 bun link        # puts `ledger` on your PATH
 ```
 
-Without linking, run it from the checkout with `bun run ledger -- <arguments>`.
+Without linking, run it from the checkout with `bun run ledger -- <arguments>`. `bun run compile` builds a standalone executable for your platform in `dist/`.
 
 ## Usage
 
