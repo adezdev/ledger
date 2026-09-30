@@ -93,13 +93,13 @@ export function renderMarkdown(study: CaseStudy): string {
   push("## Engineering timeline", "", `_${escapeMarkdown(MILESTONE_METHOD)}_`, "");
   for (const milestone of study.timeline) {
     const span = formatDate(milestone.startAt) === formatDate(milestone.endAt) ? formatDate(milestone.startAt) : `${formatDate(milestone.startAt)} – ${formatDate(milestone.endAt)}`;
-    push(`### ${milestone.id} · ${escapeMarkdown(milestone.title)}`, "");
+    push(`### ${milestone.id} · ${inline(milestone.title)}`, "");
     push(`**${escapeMarkdown(span)}** · ${plural(milestone.commits.length, "commit")} · +${formatCount(milestone.additions)} −${formatCount(milestone.deletions)}${refs(milestone.evidence)}`, "");
     push(inline(milestone.summary.text), "");
     const shown = milestone.commits.slice(0, MAX_COMMITS_PER_MILESTONE);
     for (const sha of shown) {
       const commit = commits.get(sha);
-      if (commit) push(`- ${markdownCode(commit.shortSha)} ${escapeMarkdown(commit.subject)}`);
+      if (commit) push(`- ${markdownCode(commit.shortSha)} ${inline(commit.subject)}`);
     }
     if (milestone.commits.length > shown.length) push(`- …and ${formatCount(milestone.commits.length - shown.length)} more (listed in \`report.json\`)`);
     push("");
@@ -132,7 +132,7 @@ export function renderMarkdown(study: CaseStudy): string {
   if (study.selectedCommits.length > 0) {
     push("## Selected commits", "");
     for (const commit of study.selectedCommits) {
-      push(`### ${markdownCode(commit.shortSha)} ${escapeMarkdown(commit.subject)}`, "");
+      push(`### ${markdownCode(commit.shortSha)} ${inline(commit.subject)}`, "");
       const meta = [formatDate(commit.authoredAt), plural(commit.filesChanged, "file"), `+${formatCount(commit.additions)} −${formatCount(commit.deletions)}`, commit.milestone ? `milestone ${commit.milestone}` : ""].filter(Boolean);
       push(`${escapeMarkdown(meta.join(" · "))}${refs(commit.evidence)}`, "");
       for (const reason of commit.reasons) push(`- ${inline(reason)}`);
@@ -155,7 +155,7 @@ export function renderMarkdown(study: CaseStudy): string {
 }
 
 function decisionBlock(decision: Decision): string[] {
-  const lines = [`#### ${decision.id} · ${escapeMarkdown(decision.title)}`, ""];
+  const lines = [`#### ${decision.id} · ${inline(decision.title)}`, ""];
   if (decision.detail) lines.push(`> ${inline(decision.detail)}`, "");
   const date = decision.date ? ` · ${formatDate(decision.date)}` : "";
   const label = decision.status === "inferred" ? "Inferred from" : "Source";

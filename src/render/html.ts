@@ -158,14 +158,14 @@ function timelineSection(study: CaseStudy): SafeHtml {
     const span = formatDate(milestone.startAt) === formatDate(milestone.endAt) ? dateTime(milestone.startAt) : html`${dateTime(milestone.startAt)} – ${dateTime(milestone.endAt)}`;
     return html`<li class="milestone">
 <p class="milestone-meta"><span class="milestone-id">${milestone.id}</span> ${span}</p>
-<h3>${milestone.title}</h3>
+<h3>${inline(milestone.title)}</h3>
 <p class="milestone-stats">${plural(milestone.commits.length, "commit")} · <span class="add">+${formatCount(milestone.additions)}</span> <span class="del">−${formatCount(milestone.deletions)}</span> · ${plural(milestone.filesChanged, "file")}${refs(milestone.evidence)}</p>
 <p>${inline(milestone.summary.text)}</p>
 <details${milestone.commits.length <= 6 ? html` open` : ""}>
 <summary>${milestone.commits.length === 1 ? "Commit" : `${formatCount(milestone.commits.length)} commits`}</summary>
 <ul class="commits">${shown.map((sha) => {
       const commit = commits.get(sha);
-      return commit ? html`<li><code class="sha">${commit.shortSha}</code> <span>${commit.subject}</span></li>` : "";
+      return commit ? html`<li><code class="sha">${commit.shortSha}</code> <span>${inline(commit.subject)}</span></li>` : "";
     })}${hidden > 0 ? html`<li class="more">…and ${formatCount(hidden)} more, listed in report.json</li>` : ""}</ul>
 </details>
 </li>`;
@@ -188,7 +188,7 @@ ${inferred.length > 0 ? html`<h3>Inferred</h3>
 function decisionCard(decision: Decision): SafeHtml {
   return html`<article class="decision decision-${decision.status}" id="${decision.id.toLowerCase()}">
 <header><span class="decision-id">${decision.id}</span>${badge(decision.status)}${decision.date ? html`<span class="decision-date">${dateTime(decision.date)}</span>` : ""}</header>
-<h4>${decision.title}</h4>
+<h4>${inline(decision.title)}</h4>
 ${decision.detail ? html`<blockquote>${inline(decision.detail)}</blockquote>` : ""}
 <p class="basis">${decision.status === "inferred" ? "Inferred from " : "Source: "}${inline(decision.basis)}${refs(decision.evidence)}</p>
 </article>`;
@@ -207,7 +207,7 @@ function selectedCommitsSection(selected: readonly SelectedCommit[]): SafeHtml {
 <div class="selected">${selected.map(
     (commit) => html`<article class="commit-card">
 <p class="commit-meta"><code class="sha">${commit.shortSha}</code> ${dateTime(commit.authoredAt)}${commit.milestone ? html` · <a href="#timeline">${commit.milestone}</a>` : ""}</p>
-<h3>${commit.subject}</h3>
+<h3>${inline(commit.subject)}</h3>
 <p class="milestone-stats">${plural(commit.filesChanged, "file")} · <span class="add">+${formatCount(commit.additions)}</span> <span class="del">−${formatCount(commit.deletions)}</span>${refs(commit.evidence)}</p>
 <ul class="reasons">${commit.reasons.map((reason) => html`<li>${inline(reason)}</li>`)}</ul>
 </article>`,
