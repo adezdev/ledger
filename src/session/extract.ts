@@ -126,8 +126,10 @@ export function testSummaryOf(text: string): string | undefined {
 
 function testOutputFindings(source: SessionSource, log: EvidenceLog): Finding[] {
   const results: TestSummary[] = [];
+  // Output quoted inside a message is also extracted as a result event; count it once.
+  const kind = source.events.some((event) => event.kind === "result") ? "result" : "message";
   for (const event of source.events) {
-    if (event.kind !== "result" && event.kind !== "message") continue;
+    if (event.kind !== kind) continue;
     const summary = testSummaryOf(event.text);
     if (summary) results.push({ event, summary });
   }
