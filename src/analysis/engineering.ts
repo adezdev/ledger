@@ -14,7 +14,7 @@ import {
   isTestSource,
   isVendoredOrGenerated,
 } from "./paths.ts";
-import { isRecord, markdownSections, parseJsonc } from "./text.ts";
+import { isRecord, markdownSections, parseJsonc, truncate } from "./text.ts";
 import { MARKERS } from "./technology.ts";
 
 export interface EngineeringReport {
@@ -128,8 +128,22 @@ export function analyzeEngineering(
   for (const configuration of ciConfigurations) {
     const purposeful = configuration.commands.filter((command) => command.purposes.length > 0);
     if (purposeful.length === 0) {
-      const id = log.add({ level: "observed", category: "ci", statement: `${configuration.system} configuration is tracked.`, source: { kind: "file", path: configuration.path } });
-      add("ci", { text: `${configuration.system} configuration ${code(configuration.path)} is tracked; Ledger did not recognize test, lint, or build commands in it.`, level: "observed", evidence: [id] });
+      // Shell plumbing (set -e, git config, echo, control flow) says nothing about what the workflow does.
+      const commands = uniqueBy(configuration.commands, (command) => command.command).filter((command) => !SHELL_PLUMBING.test(command.command));
+      const first = commands[0];
+      const id = log.add({
+        level: "observed",
+        category: "ci",
+        statement: commands.length > 0 ? `${configuration.system} configuration runs ${commands.map((command) => code(command.command)).join(", ")}.` : `${configuration.system} configuration is tracked.`,
+        source: { kind: "file", path: configuration.path, ...(first ? { line: first.line, excerpt: commands.map((command) => command.command).join("\n") } : {}) },
+      });
+      const shown = commands.slice(0, 3).map((command) => code(truncate(command.command, 80)));
+      const more = commands.length > shown.length ? ` and ${commands.length - shown.length} more` : "";
+      const text =
+        commands.length > 0
+          ? `${configuration.system} configuration ${code(configuration.path)} includes steps running ${joinWords(shown)}${more}; none are recognized as tests, linting, or builds.`
+          : `${configuration.system} configuration ${code(configuration.path)} is tracked; Ledger could not find the commands it runs.`;
+      add("ci", { text, level: "observed", evidence: [id] });
       continue;
     }
     const described = uniqueBy(purposeful, (command) => command.command).slice(0, 6).map((command) => {
@@ -286,6 +300,8 @@ export function analyzeEngineering(
 
   return { findings, testFiles, ciFiles, documentationFiles };
 }
+
+const SHELL_PLUMBING = /^(set\s+[-+]|git\s+(config|add|commit|push|pull|fetch|checkout|diff|status|remote|reset)\b|echo\b|printf\b|cd\b|export\b|if\b|then\b|else\b|elif\b|fi\b|for\b|do\b|done\b|while\b|exit\b|mkdir\b|[{}]|\[\[?\s)/;
 
 const STRICT_FLAGS = ["strict", "noUncheckedIndexedAccess", "exactOptionalPropertyTypes", "noImplicitOverride", "noImplicitReturns", "noFallthroughCasesInSwitch", "noPropertyAccessFromIndexSignature", "noUnusedLocals", "noUnusedParameters"];
 

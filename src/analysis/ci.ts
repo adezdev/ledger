@@ -79,7 +79,9 @@ export function parseCiConfiguration(path: string, text: string, scripts: Readon
   const actions: string[] = [];
 
   const push = (command: string, line: number): void => {
-    const cleaned = command.trim().replace(/^["']|["']$/g, "");
+    const trimmed = command.trim();
+    // Unwrap a YAML-quoted value such as run: "npm test", but never strip an unmatched quote.
+    const cleaned = /^(["']).*\1$/.test(trimmed) ? trimmed.slice(1, -1) : trimmed;
     if (cleaned === "" || cleaned.startsWith("#")) return;
     commands.push({ command: cleaned, line, ...classifyCommand(cleaned, scripts) });
   };
