@@ -18,12 +18,12 @@ argv ──> cli/args ──> app/analyze ─┬─> app/snapshot ──> git/* 
 
 | Module | Responsibility | May depend on |
 | --- | --- | --- |
-| `domain/` | Types (`model.ts`), the evidence log, statement code spans. No I/O. | nothing |
+| `domain/` | Types (`model.ts`), the evidence log, statement code spans, locale-independent formatting. No I/O. | nothing |
 | `git/` | The only place a process is started (`exec.ts`). Discovery, log/tree/tag parsing, blob reads. Knows nothing about analysis policy. | `domain` |
 | `analysis/` | Pure functions over repository facts: path classification, manifests, technologies, CI, findings, decisions. | `domain` |
 | `session/` | Session file loading (the only file reads outside `git/`), format parsing, normalization, evidence extraction. | `domain`, `analysis` helpers |
 | `synthesis/` | Assembles the `CaseStudy`. Pure: no I/O, clock, or randomness. | `domain`, `analysis`, `session/extract` |
-| `render/` | Case study to text. Never touches Git, sessions, or the filesystem. | `domain`, `synthesis/format` |
+| `render/` | Case study to text. Never touches Git, sessions, or the filesystem. | `domain` |
 | `output/` | Writes files. | nothing |
 | `app/` | Use cases wiring the above together. | everything below the CLI |
 | `cli/` | Arguments, help, summary, exit codes. | `app` |

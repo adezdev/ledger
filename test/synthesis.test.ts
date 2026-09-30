@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { EvidenceLog } from "../src/domain/evidence.ts";
 import type { Commit } from "../src/domain/model.ts";
 import { buildCaseStudy, safeHomepage } from "../src/synthesis/case-study.ts";
-import { formatCount, formatDate, inclusiveDays } from "../src/synthesis/format.ts";
+import { formatCount, formatDate, inclusiveDays } from "../src/domain/format.ts";
 import { buildMilestones, groupCommits, targetMilestoneCount, workLabel } from "../src/synthesis/milestones.ts";
 import { makeCommit, makeSnapshot, summaries } from "./helpers/builders.ts";
 

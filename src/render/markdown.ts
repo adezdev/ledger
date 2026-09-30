@@ -1,6 +1,6 @@
 import type { CaseStudy, Decision, Evidence, EvidenceLevel, Statement } from "../domain/model.ts";
 import { inlineSegments } from "../domain/statement.ts";
-import { formatCount, formatDate, plural } from "../synthesis/format.ts";
+import { formatCount, formatDate, plural } from "../domain/format.ts";
 import { MILESTONE_METHOD } from "../synthesis/milestones.ts";
 import { escapeMarkdown, markdownCode } from "./escape.ts";
 import {

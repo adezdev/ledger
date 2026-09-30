@@ -2,7 +2,7 @@ import { isDocumentation, isLockfile, isTestFile, isTestSource, isVendoredOrGene
 import type { EvidenceLog } from "../domain/evidence.ts";
 import type { Commit, CommitSummary, Milestone, SelectedCommit, Tag } from "../domain/model.ts";
 import { code } from "../domain/statement.ts";
-import { formatCount, isoDate } from "./format.ts";
+import { formatCount, isoDate } from "../domain/format.ts";
 
 export const MAX_SELECTED_COMMITS = 6;
 

@@ -22,7 +22,7 @@ import {
 } from "../domain/model.ts";
 import { code } from "../domain/statement.ts";
 import { extractSessionInsights } from "../session/extract.ts";
-import { formatCount, formatDate, inclusiveDays, isoDate, plural } from "./format.ts";
+import { formatCount, formatDate, inclusiveDays, isoDate, plural } from "../domain/format.ts";
 import { selectCommits } from "./highlights.ts";
 import { buildMilestones, describeKinds } from "./milestones.ts";
 

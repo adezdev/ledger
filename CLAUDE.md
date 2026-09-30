@@ -20,7 +20,7 @@ Run `bun run check` and `bun test` before every commit.
 
 - `src/domain/model.ts` is the contract. `CaseStudy` *is* `report.json`: changing its shape is a schema change (see the compatibility policy in docs/ARCHITECTURE.md).
 - Only `src/git/exec.ts` starts processes. Git logic stays out of analysis; analysis policy (what to read) stays out of `git/`.
-- `synthesis/` is pure: no I/O, no `Date.now()`, no randomness, no locale-dependent formatting (use `synthesis/format.ts`).
+- `synthesis/` is pure: no I/O, no `Date.now()`, no randomness, no locale-dependent formatting (use `domain/format.ts`).
 - Renderers consume the `CaseStudy` only: no Git, filesystem, or session imports. `test/security.test.ts` enforces this.
 
 ## Invariants

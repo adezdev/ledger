@@ -4,7 +4,7 @@ import { areaOf } from "../analysis/paths.ts";
 import type { EvidenceLog } from "../domain/evidence.ts";
 import type { CommitKind, CommitSummary, Milestone, Tag } from "../domain/model.ts";
 import { code } from "../domain/statement.ts";
-import { formatCount, formatDate } from "./format.ts";
+import { formatCount, formatDate } from "../domain/format.ts";
 
 export const MAX_MILESTONES = 12;
 

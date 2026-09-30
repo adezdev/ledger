@@ -1,7 +1,7 @@
 import { relative, isAbsolute } from "node:path";
 import type { AnalysisResult } from "../app/analyze.ts";
 import { EVIDENCE_LEVELS } from "../domain/model.ts";
-import { formatCount, formatDate, plural } from "../synthesis/format.ts";
+import { formatCount, formatDate, plural } from "../domain/format.ts";
 import { VERSION } from "../version.ts";
 
 /** The concise console summary printed after a successful analysis. */

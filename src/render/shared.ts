@@ -1,6 +1,6 @@
 import type { CaseStudy, CommitSummary, Decision, ProjectMetrics, EvidenceLevel, EvidenceSource, Finding, FindingArea } from "../domain/model.ts";
 import { code } from "../domain/statement.ts";
-import { formatCount, formatDate, plural } from "../synthesis/format.ts";
+import { formatCount, formatDate, plural } from "../domain/format.ts";
 
 /** Vocabulary shared by the Markdown and HTML renderers, so both say the same thing. */
 
