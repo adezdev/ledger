@@ -9,8 +9,24 @@ import { code } from "../domain/statement.ts";
 const MAX_SESSION_DECISIONS = 12;
 const MAX_DEBUGGING_NOTES = 5;
 
-const DECISION_SENTENCE = /\b(decided to|decide to|we('ll| will) (use|go with)|I('ll| will) (use|go with)|chose|opted (to|for)|went with|going with|instead of|rather than|in favou?r of|trade-?offs?|the decision)\b/i;
-const DEBUGGING_SENTENCE = /\b(root cause|the (bug|issue|problem|failure) (was|is)|caused by|turned out|regression)\b/i;
+const MAX_DECISIONS_PER_EVENT = 2;
+
+/** Sentences that state a choice outright. */
+const CHOICE = /\b(decided to|decide to|the decision (is|was)|chose|chosen|opted (to|for)|went with|going with|settled on|in favou?r of|trade-?offs?|(we|I)('ll| will| are going to| am going to) (use|go with|keep|switch to|stick with))\b/i;
+/** "rather than" and "instead of" count only alongside a verb of choosing or doing. */
+const COMPARISON = /\b(instead of|rather than)\b/i;
+const ACTION = /\b(use[sd]?|using|keep|kept|switch(ed)?|prefer(red)?|pick(ed)?|adopt(ed)?|replace[sd]?|store[sd]?|build|built|pass|generate[sd]?)\b/i;
+const DEBUGGING_SENTENCE = /\b(root cause|the (bug|issue|problem|failure) (was|is)|caused by|turned out|a regression|regression (in|from|introduced))\b/i;
+
+/** Narration of the next step ("Fixing that:") and questions are not statements of fact. */
+function isStatement(sentence: string): boolean {
+  return !/[:?]$/.test(sentence.trim());
+}
+
+export function statesDecision(sentence: string): boolean {
+  if (!isStatement(sentence)) return false;
+  return CHOICE.test(sentence) || (COMPARISON.test(sentence) && ACTION.test(sentence));
+}
 
 export interface SessionInsights {
   decisions: DecisionDraft[];
@@ -40,8 +56,10 @@ export function extractSessionInsights(sources: readonly SessionSource[], log: E
 
     for (const event of source.events) {
       if (event.kind !== "message" || decisions.length >= MAX_SESSION_DECISIONS) continue;
+      let fromEvent = 0;
       for (const sentence of candidateSentences(event.text)) {
-        if (!DECISION_SENTENCE.test(sentence) || sentence.endsWith("?")) continue;
+        if (fromEvent >= MAX_DECISIONS_PER_EVENT) break;
+        if (!statesDecision(sentence)) continue;
         const key = sentence.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
         if (seenDecisions.has(key)) continue;
         seenDecisions.add(key);
@@ -55,6 +73,7 @@ export function extractSessionInsights(sources: readonly SessionSource[], log: E
         if (sentence.length > 110) decision.detail = truncate(sentence, 280);
         if (event.timestamp) decision.date = event.timestamp.slice(0, 10);
         decisions.push(decision);
+        fromEvent++;
         if (decisions.length >= MAX_SESSION_DECISIONS) break;
       }
     }
@@ -174,7 +193,7 @@ function debuggingFindings(source: SessionSource, log: EvidenceLog): Finding[] {
   const findings: Finding[] = [];
   for (const event of source.events) {
     if (event.kind !== "message" || findings.length >= MAX_DEBUGGING_NOTES) continue;
-    const sentence = candidateSentences(event.text).find((candidate) => DEBUGGING_SENTENCE.test(candidate) && !candidate.endsWith("?"));
+    const sentence = candidateSentences(event.text).find((candidate) => DEBUGGING_SENTENCE.test(candidate) && isStatement(candidate));
     if (!sentence) continue;
     const excerpt = truncate(sentence, 240);
     const id = sessionEvidence(log, source, event, `Session ${code(source.file)} records a debugging note.`, excerpt);
