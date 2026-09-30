@@ -361,7 +361,7 @@ export function buildMilestones(commits: readonly CommitSummary[], tags: readonl
         basis: MILESTONE_METHOD,
         source: { kind: "commit-range", firstSha: first?.sha ?? "", lastSha: last?.sha ?? "", count: group.length, commits: group.map((commit) => commit.shortSha) },
       }),
-      ...groupTags.map((name) => {
+      ...[...new Set([groupTags[0], groupTags.at(-1)])].filter((name): name is string => name !== undefined).map((name) => {
         const sha = tags.find((tag) => tag.name === name)?.sha ?? "";
         return log.add({ level: "observed", category: "history", statement: `Tag ${code(name)} points at ${code(sha.slice(0, 7))}.`, source: { kind: "tag", name, sha } });
       }),
@@ -375,7 +375,8 @@ export function buildMilestones(commits: readonly CommitSummary[], tags: readonl
     const named = shownThemes.slice(0, 3);
     const others = shownThemes.length - named.length;
     const themeText = others > 0 ? `${named.join(", ")}, and ${others} other area${others === 1 ? "" : "s"}` : joinWords(named);
-    const title = [groupTags.at(-1), `${label}${named.length > 0 ? `: ${themeText}` : ""}`].filter(Boolean).join(" · ");
+    const tagRange = groupTags.length > 1 ? `${groupTags[0]} – ${groupTags.at(-1)}` : groupTags[0];
+    const title = [tagRange, `${label}${named.length > 0 ? `: ${themeText}` : ""}`].filter(Boolean).join(" · ");
     const span = formatDate(startAt) === formatDate(endAt) ? `on ${formatDate(startAt)}` : `from ${formatDate(startAt)} to ${formatDate(endAt)}`;
     const areas = topAreas(described).map(describeArea);
     const summaryParts = [
