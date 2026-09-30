@@ -157,6 +157,33 @@ describe("case study", () => {
     expect(study.project.description).toMatchObject({ text: "Demo tool", level: "documented" });
   });
 
+  test("evidence stays fully referenced when decision caps apply", () => {
+    const markers = [".github/workflows/ci.yml", "biome.json", ".editorconfig", "Dockerfile", "Makefile", ".prettierrc", "vite.config.ts", "jest.config.js", "tsconfig.json", "bun.lock", ".nvmrc", "flake.nix"];
+    const commits: Commit[] = [makeCommit("feat: start", { parents: [], at: day(1), changes: [{ path: "src/a.ts", status: "added" }] })];
+    for (let i = 0; i < 40; i++) {
+      commits.push(makeCommit(`feat: step ${i}`, { at: new Date(Date.UTC(2024, 0, 2) + i * 3_600_000).toISOString(), body: "Chose this approach because the alternative was slower.", changes: [{ path: `src/${i}.ts`, status: "added" }] }));
+    }
+    markers.forEach((path, i) => commits.push(makeCommit(`build: add ${path}`, { at: day(10 + i), changes: [{ path, status: "added" }] })));
+    const bullets = Array.from({ length: 40 }, (_, i) => `- **Choice ${i}.** Reason ${i}.`).join("\n");
+    const files: Record<string, string> = { "README.md": `# Big\n\n## Design decisions\n\n${bullets}\n` };
+    for (const path of markers) files[path] = "{}";
+    const study = buildCaseStudy({ snapshot: makeSnapshot({ files, commits }), sessions: [], generatorVersion: "test" });
+
+    const referenced = new Set([
+      ...study.overview.flatMap((statement) => statement.evidence),
+      ...(study.project.description?.evidence ?? []),
+      ...study.technologies.flatMap((technology) => technology.evidence),
+      ...study.timeline.flatMap((milestone) => milestone.evidence),
+      ...study.decisions.flatMap((decision) => decision.evidence),
+      ...study.findings.flatMap((finding) => finding.statement.evidence),
+      ...study.selectedCommits.flatMap((commit) => commit.evidence),
+    ]);
+    expect(study.evidence.filter((item) => !referenced.has(item.id)).map((item) => item.statement)).toEqual([]);
+    expect(study.decisions.filter((decision) => decision.status === "inferred")).toHaveLength(10);
+    expect(study.decisions.filter((decision) => decision.basis.startsWith("Commit message"))).toHaveLength(10);
+    expect(study.decisions.filter((decision) => decision.basis.includes("README.md"))).toHaveLength(12);
+  });
+
   test("never includes absolute paths", () => {
     const snapshot = makeSnapshot({ files: { "README.md": "# Demo\n\nSomething.\n" } });
     const json = JSON.stringify(buildCaseStudy({ snapshot, sessions: [], generatorVersion: "test" }));

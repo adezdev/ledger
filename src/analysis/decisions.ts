@@ -29,12 +29,12 @@ export function decisionsFromDocuments(documents: ReadonlyMap<string, string>, l
   const paths = [...documents.keys()].filter((path) => isDocumentation(path) && !isAgentGuide(path) && !/(^|\/)(changelog|changes|history)\./i.test(path));
 
   for (const path of paths.sort(documentOrder)) {
+    const budget = Math.min(MAX_DECISIONS_PER_DOCUMENT, MAX_DOCUMENT_DECISIONS - decisions.length);
+    if (budget <= 0) break;
     const text = documents.get(path) ?? "";
-    const found = isArchitectureRecord(path) ? decisionFromRecord(path, text, log) : decisionsFromSections(path, text, log);
-    decisions.push(...found.slice(0, MAX_DECISIONS_PER_DOCUMENT));
-    if (decisions.length >= MAX_DOCUMENT_DECISIONS) break;
+    decisions.push(...(isArchitectureRecord(path) ? decisionFromRecord(path, text, log) : decisionsFromSections(path, text, log, budget)));
   }
-  return decisions.slice(0, MAX_DOCUMENT_DECISIONS);
+  return decisions;
 }
 
 function documentOrder(a: string, b: string): number {
@@ -72,14 +72,16 @@ function decisionFromRecord(path: string, text: string, log: EvidenceLog): Decis
   return [decision];
 }
 
-function decisionsFromSections(path: string, text: string, log: EvidenceLog): DecisionDraft[] {
+/** Evidence is only recorded for decisions within `limit`, so nothing unreferenced reaches the report. */
+function decisionsFromSections(path: string, text: string, log: EvidenceLog, limit: number): DecisionDraft[] {
   const decisions: DecisionDraft[] = [];
   for (const section of markdownSections(text)) {
+    if (decisions.length >= limit) break;
     if (section.level === 0 || !DECISION_HEADING.test(section.title) || section.body === "") continue;
     const items = topLevelListItems(section.body, section.line + 1);
 
     if (items.length >= 2) {
-      for (const item of items) {
+      for (const item of items.slice(0, limit - decisions.length)) {
         const title = item.lead ?? truncate(sentences(item.text)[0] ?? item.text, 100);
         const remainder = item.lead ? item.text.slice(item.text.indexOf(item.lead) + item.lead.length).replace(/^[\s.:—–-]+/, "") : item.text;
         const detail = remainder && remainder !== title ? truncate(remainder, 280) : undefined;
@@ -115,7 +117,7 @@ const RATIONALE = /\b(because|so that|in order to|instead of|rather than|trade-?
 
 /** Decisions stated explicitly in commit messages. Messages are the author's own words, so these are documented. */
 export function decisionsFromCommits(commits: readonly Commit[], log: EvidenceLog): DecisionDraft[] {
-  const candidates: { decision: DecisionDraft; explicit: boolean; index: number }[] = [];
+  const candidates: { commit: Commit; detail: string | undefined; explicit: boolean; index: number }[] = [];
 
   commits.forEach((commit, index) => {
     if (commit.parents.length > 1) return;
@@ -124,26 +126,28 @@ export function decisionsFromCommits(commits: readonly Commit[], log: EvidenceLo
     const rationale = sentences(commit.body).filter((sentence) => RATIONALE.test(sentence) && sentence.length >= 20);
     const eligibleKind = !["fix", "docs", "test", "style", "revert"].includes(classification.kind);
     if (!explicit && !(eligibleKind && rationale.length > 0)) return;
-
-    const title = capitalize(subjectText(commit.subject));
     const detail = rationale.length > 0 ? truncate(rationale.slice(0, 2).join(" "), 280) : undefined;
-    const date = commit.authoredAt.slice(0, 10);
-    const evidenceId = log.add({
-      level: "documented",
-      category: "decision",
-      statement: `Commit message states: "${truncate(commit.subject, 120)}"${detail ? ` — "${detail}"` : ""}.`,
-      source: { kind: "commit", sha: commit.sha, shortSha: commit.shortSha, date },
-    });
-    const decision: DecisionDraft = { title, status: "documented", basis: `Commit message ${code(commit.shortSha)}`, date, evidence: [evidenceId] };
-    if (detail) decision.detail = detail;
-    candidates.push({ decision, explicit, index });
+    candidates.push({ commit, detail, explicit, index });
   });
 
+  // Evidence is recorded only for the decisions that make the cut, so the
+  // appendix never lists items the report does not reference.
   return candidates
     .sort((a, b) => Number(b.explicit) - Number(a.explicit) || a.index - b.index)
     .slice(0, MAX_COMMIT_DECISIONS)
     .sort((a, b) => a.index - b.index)
-    .map((candidate) => candidate.decision);
+    .map(({ commit, detail }) => {
+      const date = commit.authoredAt.slice(0, 10);
+      const evidenceId = log.add({
+        level: "documented",
+        category: "decision",
+        statement: `Commit message states: "${truncate(commit.subject, 120)}"${detail ? ` — "${detail}"` : ""}.`,
+        source: { kind: "commit", sha: commit.sha, shortSha: commit.shortSha, date },
+      });
+      const decision: DecisionDraft = { title: capitalize(subjectText(commit.subject)), status: "documented", basis: `Commit message ${code(commit.shortSha)}`, date, evidence: [evidenceId] };
+      if (detail) decision.detail = detail;
+      return decision;
+    });
 }
 
 interface MarkerHistory {
@@ -160,7 +164,8 @@ interface MarkerHistory {
  */
 export function inferredToolingDecisions(commits: readonly Commit[], files: readonly TrackedFile[], log: EvidenceLog): DecisionDraft[] {
   const histories = markerHistories(commits, files);
-  const decisions: { decision: DecisionDraft; index: number }[] = [];
+  // Built lazily so evidence is recorded only for the decisions that are kept.
+  const decisions: { build: () => DecisionDraft; index: number }[] = [];
   const consumed = new Set<MarkerHistory>();
 
   for (const history of histories) {
@@ -177,30 +182,29 @@ export function inferredToolingDecisions(commits: readonly Commit[], files: read
     );
     if (replacement?.added) {
       consumed.add(history).add(replacement);
-      const removedEvidence = markerEvidence(log, removal, "removed");
-      const addedEvidence = markerEvidence(log, replacement.added, "added");
+      const added = replacement.added;
       decisions.push({
-        index: Math.min(removal.index, replacement.added.index),
-        decision: {
+        index: Math.min(removal.index, added.index),
+        build: () => ({
           title: `Moved from ${history.marker.name} to ${replacement.marker.name}`,
           status: "inferred",
-          basis: `${code(removal.path)} was removed in ${code(removal.commit.shortSha)} and ${code(replacement.added.path)} was added in ${code(replacement.added.commit.shortSha)}`,
-          date: replacement.added.commit.authoredAt.slice(0, 10),
-          evidence: [removedEvidence, addedEvidence],
-        },
+          basis: `${code(removal.path)} was removed in ${code(removal.commit.shortSha)} and ${code(added.path)} was added in ${code(added.commit.shortSha)}`,
+          date: added.commit.authoredAt.slice(0, 10),
+          evidence: [markerEvidence(log, removal, "removed"), markerEvidence(log, added, "added")],
+        }),
       });
       continue;
     }
     consumed.add(history);
     decisions.push({
       index: removal.index,
-      decision: {
+      build: () => ({
         title: `Stopped using ${history.marker.name}`,
         status: "inferred",
         basis: `${code(removal.path)} was removed in ${code(removal.commit.shortSha)} and no ${history.marker.name} files remain at HEAD`,
         date: removal.commit.authoredAt.slice(0, 10),
         evidence: [markerEvidence(log, removal, "removed")],
-      },
+      }),
     });
   }
 
@@ -209,20 +213,20 @@ export function inferredToolingDecisions(commits: readonly Commit[], files: read
     const added = history.added;
     decisions.push({
       index: added.index,
-      decision: {
+      build: () => ({
         title: `Adopted ${history.marker.name}`,
         status: "inferred",
         basis: `${code(added.path)} first appeared in ${code(added.commit.shortSha)}, ${added.index} commit${added.index === 1 ? "" : "s"} after the first analyzed commit`,
         date: added.commit.authoredAt.slice(0, 10),
         evidence: [markerEvidence(log, added, "added")],
-      },
+      }),
     });
   }
 
   return decisions
     .sort((a, b) => a.index - b.index)
     .slice(0, MAX_INFERRED_DECISIONS)
-    .map((entry) => entry.decision);
+    .map((entry) => entry.build());
 }
 
 function markerHistories(commits: readonly Commit[], files: readonly TrackedFile[]): MarkerHistory[] {
