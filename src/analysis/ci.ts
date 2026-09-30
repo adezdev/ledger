@@ -109,7 +109,7 @@ export function parseCiConfiguration(path: string, text: string, scripts: Readon
       const start = i + 1;
       const block: string[] = [];
       while (i + 1 < lines.length && (lines[i + 1]?.trim() === "" || indentOf(lines[i + 1] ?? "") > indent)) block.push(lines[++i] ?? "");
-      for (const command of joinContinuations(block)) push(command.text, start + command.line + 1);
+      for (const command of joinContinuations(withoutHeredocBodies(block))) push(command.text, start + command.line + 1);
     } else if (value === "") {
       // A YAML list of commands.
       while (i + 1 < lines.length && /^\s*-\s+/.test(lines[i + 1] ?? "") && indentOf(lines[i + 1] ?? "") >= indent) {
@@ -123,6 +123,22 @@ export function parseCiConfiguration(path: string, text: string, scripts: Readon
     }
   }
   return { path, system, commands, actions };
+}
+
+/** Blanks the bodies of heredocs (data, not commands), keeping line positions. */
+function withoutHeredocBodies(block: readonly string[]): string[] {
+  const result: string[] = [];
+  let delimiter: string | null = null;
+  for (const line of block) {
+    if (delimiter !== null) {
+      if (line.trim() === delimiter) delimiter = null;
+      result.push("");
+      continue;
+    }
+    result.push(line);
+    delimiter = /<<-?\s*(['"]?)([A-Za-z_]\w*)\1/.exec(line)?.[2] ?? null;
+  }
+  return result;
 }
 
 function indentOf(line: string): number {
