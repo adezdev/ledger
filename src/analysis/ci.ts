@@ -19,11 +19,11 @@ export interface CiConfiguration {
 }
 
 const PURPOSES: [CommandPurpose, RegExp][] = [
-  ["test", /\b(bun test|deno test|(npm|pnpm|yarn|bun)( run)? test|vitest|jest|mocha|playwright test|cypress run|pytest|tox|nox|cargo (test|nextest)|go test|dotnet test|ctest|mvn (-\S+ )*(test|verify)|gradlew? (test|check)|rspec|phpunit|mix test|flutter test|swift test|make test)\b/],
+  ["test", /\b(bun test|deno test|(npm|pnpm|yarn|bun)( run)? test|vitest|jest|mocha|playwright test|cypress run|pytest|tox|nox|cargo (test|nextest)|go test|dotnet test|ctest|mvn (-\S+ )*(test|verify)|gradlew? (test|check)|rspec|phpunit|mix test|flutter test|swift test)\b/],
   ["typecheck", /\b(tsc|vue-tsc|svelte-check|mypy|pyright|cargo check|flow check|deno check)\b/],
   ["lint", /\b(eslint|biome (check|lint|ci)|ruff check|ruff\b(?! format)|flake8|pylint|clippy|golangci-lint|go vet|rubocop|stylelint|shellcheck|hadolint|markdownlint|(npm|pnpm|yarn|bun)( run)? lint)\b/],
   ["format", /\b(prettier (--check|-c)|biome format|ruff format --check|black --check|cargo fmt|gofmt|rustfmt --check|dotnet format)\b/],
-  ["build", /\b((npm|pnpm|yarn|bun)( run)? build|bun build|cargo build|go build|dotnet (build|publish)|cmake --build|mvn (-\S+ )*package|gradlew? (build|assemble)|docker build|vite build|next build|tsc (-b|--build)|make\b(?! test))/],
+  ["build", /\b((npm|pnpm|yarn|bun)( run)? build|bun build|cargo build|go build|dotnet (build|publish)|cmake --build|mvn (-\S+ )*package|gradlew? (build|assemble)|docker build|vite build|next build|tsc (-b|--build))/],
   ["coverage", /(--coverage|--cov\b|coverage run|cargo (tarpaulin|llvm-cov)|nyc\b|c8\b)/],
   ["benchmark", /\b(bench|benchmark|hyperfine)\b/],
   ["audit", /\b((npm|pnpm|yarn) audit|cargo (audit|deny)|pip-audit|safety check|govulncheck|trivy|snyk)\b/],
@@ -37,9 +37,11 @@ export function classifyCommand(command: string, scripts: Readonly<Record<string
   const scriptCommand = scriptName !== undefined ? scripts[scriptName] : undefined;
   if (scriptName !== undefined && scriptCommand !== undefined) result.resolvedScript = { name: scriptName, command: scriptCommand };
   const subject = expandScripts(command, scripts, new Set()).map(substituteVariables).join("\n");
+  const purposes = new Set<CommandPurpose>(targetPurposes(subject));
   for (const [purpose, pattern] of PURPOSES) {
-    if (pattern.test(subject)) result.purposes.push(purpose);
+    if (pattern.test(subject)) purposes.add(purpose);
   }
+  result.purposes = PURPOSES.map(([purpose]) => purpose).filter((purpose) => purposes.has(purpose));
   return result;
 }
 
@@ -52,6 +54,28 @@ function substituteVariables(command: string): string {
   return command
     .replace(/\$\{\{\s*env\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g, (_, name: string) => name.toLowerCase())
     .replace(/\$\{?([A-Z][A-Z0-9_]*)\}?/g, (_, name: string) => name.toLowerCase());
+}
+
+const TARGET_PURPOSES: [CommandPurpose, RegExp][] = [
+  ["test", /^(tests?|check|unit|integration|e2e)([-_].*)?$|[-_]tests?$/],
+  ["coverage", /cover(age)?/],
+  ["lint", /^(lint|codestyle|style|flake8|pylint|ruff|clippy|vet)([-_].*)?$/],
+  ["format", /^(fmt|format)([-_].*)?$/],
+  ["typecheck", /^(typecheck|type-check|types|mypy|pyright)$/],
+  ["build", /^(build|dist|package|compile|all)$/],
+];
+
+/** Purposes of `make` and `just` targets, judged by the target's name. */
+function targetPurposes(subject: string): CommandPurpose[] {
+  const purposes: CommandPurpose[] = [];
+  for (const segment of commandSegments(subject)) {
+    const runner = /^(?:g?make|just)\s+(.*)$/.exec(segment);
+    if (!runner?.[1]) continue;
+    for (const target of runner[1].split(/\s+/).filter((token) => token !== "" && !token.startsWith("-") && !token.includes("="))) {
+      for (const [purpose, pattern] of TARGET_PURPOSES) if (pattern.test(target.toLowerCase())) purposes.push(purpose);
+    }
+  }
+  return purposes;
 }
 
 /** Heredoc bodies are data fed to a command, not commands. */
