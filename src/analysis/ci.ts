@@ -33,17 +33,37 @@ const SCRIPT_RUN = /^(?:npm|pnpm|yarn|bun)(?:\s+run)?\s+([A-Za-z0-9:_-]+)/;
 
 export function classifyCommand(command: string, scripts: Readonly<Record<string, string>> = {}): Pick<CiCommand, "purposes" | "resolvedScript"> {
   const result: Pick<CiCommand, "purposes" | "resolvedScript"> = { purposes: [] };
-  let subject = command;
   const scriptName = SCRIPT_RUN.exec(command.trim())?.[1];
   const scriptCommand = scriptName !== undefined ? scripts[scriptName] : undefined;
-  if (scriptName !== undefined && scriptCommand !== undefined) {
-    result.resolvedScript = { name: scriptName, command: scriptCommand };
-    subject = `${command}\n${scriptCommand}`;
-  }
+  if (scriptName !== undefined && scriptCommand !== undefined) result.resolvedScript = { name: scriptName, command: scriptCommand };
+  const subject = expandScripts(command, scripts, new Set()).join("\n");
   for (const [purpose, pattern] of PURPOSES) {
     if (pattern.test(subject)) result.purposes.push(purpose);
   }
   return result;
+}
+/** Splits a shell command line into its individual commands. */
+export function commandSegments(command: string): string[] {
+  return command
+    .split(/&&|\|\||;|\|/)
+    .map((segment) => segment.trim())
+    .filter((segment) => segment !== "");
+}
+
+/**
+ * The command plus the scripts it runs, recursively, so a `check` script made
+ * of `bun run typecheck && bun run lint` is recognized for both purposes.
+ */
+function expandScripts(command: string, scripts: Readonly<Record<string, string>>, seen: Set<string>): string[] {
+  const expanded = [command];
+  for (const segment of commandSegments(command)) {
+    const name = SCRIPT_RUN.exec(segment)?.[1];
+    const script = name !== undefined ? scripts[name] : undefined;
+    if (name === undefined || script === undefined || seen.has(name) || seen.size >= 10) continue;
+    seen.add(name);
+    expanded.push(...expandScripts(script, scripts, seen));
+  }
+  return expanded;
 }
 
 /**

@@ -28,7 +28,7 @@ const PURPOSE_LABELS: Record<CommandPurpose, string> = {
   test: "tests",
   typecheck: "type checking",
   lint: "linting",
-  format: "format checking",
+  format: "formatting",
   build: "a build",
   coverage: "coverage",
   benchmark: "benchmarks",
@@ -101,7 +101,7 @@ export function analyzeEngineering(
   // Package scripts -----------------------------------------------------------
   if (rootManifest) {
     for (const [name, command] of Object.entries(rootManifest.scripts)) {
-      const { purposes } = classifyCommand(command);
+      const purposes = classifyCommand(command, rootManifest.scripts).purposes.filter((candidate) => candidate !== "audit");
       const purpose = purposes.find((candidate) => ["test", "typecheck", "lint", "format", "build", "benchmark"].includes(candidate));
       if (!purpose) continue;
       const area: FindingArea = purpose === "test" ? "testing" : purpose === "typecheck" ? "types" : purpose === "lint" || purpose === "format" ? "linting" : purpose === "benchmark" ? "benchmarks" : "build";
@@ -111,7 +111,7 @@ export function analyzeEngineering(
         statement: `${code(rootManifest.path)} script ${code(name)} runs ${code(command)}.`,
         source: { kind: "file", path: rootManifest.path, section: "scripts", excerpt: `"${name}": "${command}"` },
       });
-      add(area, { text: `${code(rootManifest.path)} defines a ${code(name)} script for ${PURPOSE_LABELS[purpose]}: ${code(command)}.`, level: "observed", evidence: [id] });
+      add(area, { text: `${code(rootManifest.path)} defines a ${code(name)} script for ${joinWords(purposes.map((candidate) => PURPOSE_LABELS[candidate]))}: ${code(command)}.`, level: "observed", evidence: [id] });
     }
     if (rootManifest.binaries.length > 0) {
       const id = log.add({
