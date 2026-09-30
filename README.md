@@ -163,3 +163,7 @@ The test suite configures Git identity inside its own temporary repositories and
 ## Future direction
 
 Likely next steps, none of which the core needs to change for: native adapters for Claude Code and Codex session exports, analyzing a repository by URL, an optional AI pass that rewrites the narrative while keeping evidence links, report themes, PDF export, and a GitHub Action that publishes a report per release.
+
+## License
+
+Licensed under the [Apache License, Version 2.0](LICENSE).

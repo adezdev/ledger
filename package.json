@@ -2,6 +2,7 @@
   "name": "ledger",
   "version": "0.1.0",
   "description": "Turn Git history into an evidence-backed engineering case study.",
+  "license": "Apache-2.0",
   "private": true,
   "type": "module",
   "bin": {
