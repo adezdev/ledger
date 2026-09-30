@@ -282,6 +282,7 @@ export type FindingArea =
   | "benchmarks"
   | "documentation"
   | "release"
+  | "process"
   | "session";
 
 export interface Finding {

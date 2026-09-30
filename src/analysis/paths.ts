@@ -211,7 +211,7 @@ export function areaOf(path: string): string {
   const segments = path.split("/");
   const [first, second] = segments;
   if (segments.length === 1 || first === undefined) {
-    if (isDocumentation(path)) return "docs";
+    if (isDocumentation(path)) return "documentation";
     return "project root";
   }
   if (SOURCE_ROOTS.has(first.toLowerCase()) && segments.length >= 3 && second !== undefined) {
