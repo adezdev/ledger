@@ -4,6 +4,8 @@ import { isManifestPath } from "./manifests.ts";
 
 const CONVENTIONAL = /^([a-zA-Z]+)(?:\(([^)]*)\))?(!)?:\s+\S/;
 
+const AREA_PREFIX = /^([A-Za-z0-9_][\w./-]{0,40}):\s+(\S.*)$/;
+
 const TYPE_ALIASES: Record<string, CommitKind> = {
   feat: "feat",
   feature: "feat",
@@ -60,12 +62,19 @@ export function classifyCommit(commit: Commit): CommitClassification {
     }
   }
 
-  const keyword = KEYWORDS.find(([pattern]) => pattern.test(commit.subject.trim()));
-  if (keyword) return { kind: keyword[1], source: "keyword", breaking: breakingFooter };
+  // "area: message" subjects (ripgrep, Go, the Linux kernel) name the part of the
+  // codebase first; the area becomes the scope and the message is classified.
+  const area = AREA_PREFIX.exec(commit.subject.trim());
+  const scope = area?.[1]?.toLowerCase();
+  const text = area?.[2] ?? commit.subject.trim();
+  const withScope = (classification: CommitClassification): CommitClassification => (scope ? { ...classification, scope } : classification);
+
+  const keyword = KEYWORDS.find(([pattern]) => pattern.test(text));
+  if (keyword) return withScope({ kind: keyword[1], source: "keyword", breaking: breakingFooter });
 
   const structural = kindFromChanges(commit.changes);
-  if (structural) return { kind: structural, source: "structure", breaking: breakingFooter };
-  return { kind: "other", source: "none", breaking: breakingFooter };
+  if (structural) return withScope({ kind: structural, source: "structure", breaking: breakingFooter });
+  return withScope({ kind: "other", source: "none", breaking: breakingFooter });
 }
 
 function kindFromChanges(changes: readonly FileChange[]): CommitKind | undefined {
