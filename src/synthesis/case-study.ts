@@ -340,6 +340,7 @@ function writeLimitations(
     `Ledger read history reachable from HEAD${snapshot.branch ? ` (${code(snapshot.branch)})` : ""} only; other branches and unpushed work elsewhere are not included.`,
     "Ledger did not build the project, run its tests, or execute CI. Statements about tests and CI describe what is configured, not whether it passes.",
     "Line counts exclude lockfiles, binary files, merge commits, and automated commits. Dates are author dates as recorded, which rebases can rewrite.",
+    "Contributors are counted by author name, so one person committing under several names counts more than once.",
     "Languages are classified by file extension. Milestone grouping and some commit types are Ledger's inferences and are marked as such.",
     "Only tracked metadata, CI configuration, and documentation files were read; source code contents were not inspected.",
   ];
