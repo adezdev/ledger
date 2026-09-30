@@ -45,7 +45,7 @@ export function extractSessionInsights(sources: readonly SessionSource[], log: E
         const key = sentence.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
         if (seenDecisions.has(key)) continue;
         seenDecisions.add(key);
-        const id = sessionEvidence(log, source, event, `Session ${source.file} records: "${truncate(sentence, 200)}"`, truncate(sentence, 280));
+        const id = sessionEvidence(log, source, event, `Session ${code(source.file)} records: "${truncate(sentence, 200)}"`, truncate(sentence, 280));
         const decision: DecisionDraft = {
           title: truncate(sentence, 110),
           status: "documented",
@@ -86,10 +86,10 @@ function commandFindings(source: SessionSource, commands: readonly SessionEvent[
     .filter(([command]) => classifyCommand(command).purposes.length > 0)
     .sort((a, b) => b[1].count - a[1].count)
     .slice(0, 4);
-  const ids = notable.map(([command, entry]) => sessionEvidence(log, source, entry.first, `Session ${source.file} records the command ${code(command)}${entry.count > 1 ? ` (${entry.count} times)` : ""}.`, command));
+  const ids = notable.map(([command, entry]) => sessionEvidence(log, source, entry.first, `Session ${code(source.file)} records the command ${code(command)}${entry.count > 1 ? ` (${entry.count} times)` : ""}.`, command));
   const examples = notable.map(([command, entry]) => `${code(command)}${entry.count > 1 ? ` (${entry.count}×)` : ""}`);
   const first = commands[0];
-  if (ids.length === 0 && first) ids.push(sessionEvidence(log, source, first, `Session ${source.file} records ${commands.length} commands.`, truncate(first.command ?? first.text, 120)));
+  if (ids.length === 0 && first) ids.push(sessionEvidence(log, source, first, `Session ${code(source.file)} records ${commands.length} commands.`, truncate(first.command ?? first.text, 120)));
   return [
     {
       area: "session",
@@ -135,7 +135,7 @@ function testOutputFindings(source: SessionSource, log: EvidenceLog): Finding[] 
   }
   const latest = results.at(-1);
   if (!latest) return [];
-  const id = sessionEvidence(log, source, latest.event, `Session ${source.file} records test output: "${latest.summary}".`, latest.summary);
+  const id = sessionEvidence(log, source, latest.event, `Session ${code(source.file)} records test output: "${latest.summary}".`, latest.summary);
   const when = latest.event.timestamp ? ` at ${latest.event.timestamp.replace("T", " ").slice(0, 16)} UTC` : "";
   return [
     {
@@ -156,7 +156,7 @@ function debuggingFindings(source: SessionSource, log: EvidenceLog): Finding[] {
     const sentence = candidateSentences(event.text).find((candidate) => DEBUGGING_SENTENCE.test(candidate) && !candidate.endsWith("?"));
     if (!sentence) continue;
     const excerpt = truncate(sentence, 240);
-    const id = sessionEvidence(log, source, event, `Session ${source.file} records a debugging note.`, excerpt);
+    const id = sessionEvidence(log, source, event, `Session ${code(source.file)} records a debugging note.`, excerpt);
     findings.push({ area: "session", statement: { text: `Debugging note from ${code(source.file)}: “${excerpt}”`, level: "documented", evidence: [id] } });
   }
   return findings;
