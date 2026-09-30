@@ -37,7 +37,7 @@ export class FixtureRepo {
       cmd: ["git", ...args],
       cwd: this.root,
       env: {
-        PATH: process.env["PATH"] ?? "",
+        ...inheritedEnvironment(),
         HOME: this.base,
         GIT_CONFIG_GLOBAL: this.globalConfig,
         GIT_CONFIG_NOSYSTEM: "1",
@@ -79,4 +79,13 @@ export class FixtureRepo {
   async cleanup(): Promise<void> {
     await rm(this.base, { recursive: true, force: true });
   }
+}
+
+/** The test process environment without GIT_* variables that could point Git at another repository. */
+function inheritedEnvironment(): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined && !key.startsWith("GIT_")) env[key] = value;
+  }
+  return env;
 }
