@@ -261,7 +261,10 @@ function writeOverview(
       paths: topLevel.slice(0, 12).map((directory) => `${directory}/`),
     },
   });
-  const layout = topLevel.length > 0 ? `, organized under ${joinWords(topLevel.slice(0, 6).map((directory) => code(`${directory}/`)))}${topLevel.length > 6 ? ` and ${topLevel.length - 6} other directories` : ""}` : "";
+  const shownDirectories = topLevel.slice(0, 6).map((directory) => code(`${directory}/`));
+  const otherDirectories = topLevel.length - shownDirectories.length;
+  if (otherDirectories > 0) shownDirectories.push(plural(otherDirectories, "other directory", "other directories"));
+  const layout = topLevel.length > 0 ? `, organized under ${joinWords(shownDirectories)}` : "";
   statements.push({
     text: `At HEAD (${code(snapshot.headSha.slice(0, 7))}${snapshot.branch ? ` on ${code(snapshot.branch)}` : ", detached"}), the repository tracks ${plural(snapshot.files.length, "file")}${layout}.`,
     level: "observed",
@@ -288,7 +291,7 @@ function writeOverview(
   if (tooling.length > 0) {
     const names = tooling.slice(0, 8).map((technology) => technology.name);
     statements.push({
-      text: `Tooling identified from tracked manifests and configuration files: ${joinWords(names)}${tooling.length > 8 ? `, among ${tooling.length} in total` : ""}.`,
+      text: `Tracked manifests and configuration files identify ${joinWords(names)}${tooling.length > 8 ? `, among ${tooling.length} technologies in total` : ""}.`,
       level: "observed",
       evidence: tooling.slice(0, 8).flatMap((technology) => technology.evidence.slice(0, 1)),
     });
