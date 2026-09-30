@@ -1,5 +1,7 @@
 version: 2
 updates:
+  # Bun dependencies are not listed: Dependabot's Bun support cannot read the
+  # lockfile format (version 2) that current Bun releases write.
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -9,13 +11,3 @@ updates:
     groups:
       actions:
         patterns: ["*"]
-
-  - package-ecosystem: bun
-    directory: /
-    schedule:
-      interval: weekly
-    commit-message:
-      prefix: build
-    groups:
-      development-dependencies:
-        dependency-type: development
