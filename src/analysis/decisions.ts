@@ -115,7 +115,19 @@ function decisionsFromSections(path: string, text: string, log: EvidenceLog, lim
   return decisions;
 }
 
-const EXPLICIT_SUBJECT = /\b(instead of|in favou?r of|rather than)\b|\b(replace[sd]?|replacing)\b.+\bwith\b|\b(switch(es|ed)?|migrate[sd]?|migrating)\b.+\b(to|from)\b/i;
+/**
+ * A subject that states a choice: it starts with a verb of choosing and names
+ * the alternative the way that verb does. "Replace X with Y", "Switch from X
+ * to Y", and "Use X instead of Y" qualify; "Remove X from Y" and "Use X to do
+ * Y" do not, because nothing was chosen over anything. Moving code is
+ * reorganization, not a choice between alternatives.
+ */
+const EXPLICIT_SUBJECT = [
+  /^(replace[sd]?|replacing)\b.+\b(with|by)\b/i,
+  /^(switch(es|ed)?|switching|migrate[sd]?|migrating)\b.*\b(to|from)\b/i,
+  /^(use[sd]?|using|prefer(red|s)?|adopt(ed|s)?|drop(ped|s)?|remove[sd]?|removing)\b.*\b(instead of|in favou?r of|rather than|over)\b/i,
+];
+
 const RATIONALE = /\b(because|so that|in order to|instead of|rather than|trade-?offs?|decided|we chose|chose to|opted (to|for))\b/i;
 
 /** Decisions stated explicitly in commit messages. Messages are the author's own words, so these are documented. */
@@ -125,7 +137,9 @@ export function decisionsFromCommits(commits: readonly Commit[], log: EvidenceLo
   commits.forEach((commit, index) => {
     if (commit.parents.length > 1) return;
     const classification = classifyCommit(commit);
-    const explicit = EXPLICIT_SUBJECT.test(commit.subject);
+    const onlyDocs = commit.changes.length > 0 && commit.changes.every((change) => isDocumentation(change.path));
+    const text = decisionText(commit.subject);
+    const explicit = EXPLICIT_SUBJECT.some((pattern) => pattern.test(text)) && !/\btypos?\b/i.test(commit.subject) && !onlyDocs;
     const rationale = sentences(commit.body).filter((sentence) => RATIONALE.test(sentence) && sentence.length >= 20);
     const eligibleKind = !["fix", "docs", "test", "style", "revert"].includes(classification.kind);
     if (!explicit && !(eligibleKind && rationale.length > 0)) return;
@@ -260,6 +274,11 @@ function markerEvidence(log: EvidenceLog, event: { commit: Commit; path: string 
     statement: `${code(event.path)} was ${verb} in this commit.`,
     source: { kind: "commit", sha: event.commit.sha, shortSha: event.commit.shortSha, date: event.commit.authoredAt.slice(0, 10), files: [event.path] },
   });
+}
+
+/** The subject without a Conventional Commits type or an "area:" prefix. */
+function decisionText(subject: string): string {
+  return subjectText(subject).replace(/^[A-Za-z0-9_][\w./-]{0,40}:\s+/, "");
 }
 
 function capitalize(text: string): string {
