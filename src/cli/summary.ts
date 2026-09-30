@@ -12,7 +12,7 @@ export function formatSummary(result: AnalysisResult, writtenPaths: readonly str
     .filter((technology) => technology.kind === "language" || technology.kind === "runtime" || technology.kind === "framework")
     .slice(0, 4)
     .map((technology) => technology.name);
-  const levels = EVIDENCE_LEVELS.map((level) => `${study.evidence.filter((item) => item.level === level).length} ${level}`).join(", ");
+  const levels = EVIDENCE_LEVELS.map((level) => `${formatCount(study.evidence.filter((item) => item.level === level).length)} ${level}`).join(", ");
   const documented = study.decisions.filter((decision) => decision.status === "documented").length;
   const span =
     metrics.timespanDays <= 1
