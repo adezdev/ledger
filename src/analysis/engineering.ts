@@ -15,6 +15,7 @@ import {
   isVendoredOrGenerated,
 } from "./paths.ts";
 import { formatCount } from "../domain/format.ts";
+import { isProjectRelease } from "./releases.ts";
 import { isRecord, markdownSections, parseJsonc, truncate } from "./text.ts";
 import { MARKERS } from "./technology.ts";
 
@@ -258,16 +259,23 @@ export function analyzeEngineering(
   // Releases -------------------------------------------------------------------------
   if (snapshot.tags.length > 0) {
     const order = new Map(snapshot.commits.map((commit, index) => [commit.sha, index]));
-    const tags = [...snapshot.tags].sort((a, b) => (order.get(a.sha) ?? 0) - (order.get(b.sha) ?? 0));
-    const first = tags[0];
-    const last = tags.at(-1);
+    const byHistory = (a: { sha: string }, b: { sha: string }) => (order.get(a.sha) ?? 0) - (order.get(b.sha) ?? 0);
+    const tags = [...snapshot.tags].sort(byHistory);
+    // Monorepos also tag components (ignore-0.4.26); the range should span the project's own releases.
+    const releases = tags.filter((tag) => isProjectRelease(tag.name));
+    const ranged = releases.length > 0 ? releases : tags;
+    const first = ranged[0];
+    const last = ranged.at(-1);
     if (first && last) {
       const ids = [first, last].map((tag) => log.add({ level: "observed", category: "history", statement: `Tag ${code(tag.name)} points at ${code(tag.sha.slice(0, 7))}.`, source: { kind: "tag", name: tag.name, sha: tag.sha } }));
-      add("release", {
-        text: tags.length === 1 ? `History includes one tag, ${code(first.name)}.` : `History includes ${tags.length} tags, from ${code(first.name)} to ${code(last.name)}.`,
-        level: "observed",
-        evidence: [...new Set(ids)],
-      });
+      const others = tags.length - releases.length;
+      const text =
+        tags.length === 1
+          ? `History includes one tag, ${code(first.name)}.`
+          : releases.length > 0 && others > 0
+            ? `History includes ${formatCount(tags.length)} tags: ${formatCount(releases.length)} project release${releases.length === 1 ? "" : "s"} from ${code(first.name)} to ${code(last.name)}, and ${formatCount(others)} other tag${others === 1 ? "" : "s"}, such as component releases.`
+            : `History includes ${formatCount(tags.length)} tags, from ${code(first.name)} to ${code(last.name)}.`;
+      add("release", { text, level: "observed", evidence: [...new Set(ids)] });
     }
   }
 
