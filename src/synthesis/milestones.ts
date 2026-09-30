@@ -438,13 +438,17 @@ export function buildMilestones(commits: readonly CommitSummary[], tags: readonl
 }
 
 /**
- * "Feature work" when one kind covers 60% of commits, "Fixes and testing" when
- * two kinds cover 75%, otherwise "Development". Ties go to the kind with more
+ * "Feature work" when one kind covers 60% of the commits with a known type,
+ * "Fixes and testing" when two kinds cover 75%, otherwise "Development". Ties go to the kind with more
  * changed lines, then to a fixed priority.
  */
 export function workLabel(commits: readonly CommitSummary[]): string {
+  // Commits whose type could not be determined do not decide the label,
+  // provided most commits have a known type.
+  const known = commits.filter((commit) => commit.classification.kind !== "other");
+  const basis = known.length >= commits.length / 2 ? known : commits;
   const stats = new Map<CommitKind, { count: number; churn: number }>();
-  for (const commit of commits) {
+  for (const commit of basis) {
     const entry = stats.get(commit.classification.kind) ?? { count: 0, churn: 0 };
     entry.count++;
     entry.churn += commit.additions + commit.deletions;
@@ -453,7 +457,7 @@ export function workLabel(commits: readonly CommitSummary[]): string {
   const ranked = [...stats.entries()].sort(
     (a, b) => b[1].count - a[1].count || b[1].churn - a[1].churn || KIND_PRIORITY.indexOf(a[0]) - KIND_PRIORITY.indexOf(b[0]),
   );
-  const total = Math.max(1, commits.length);
+  const total = Math.max(1, basis.length);
   const [first, second] = ranked;
   if (!first || first[0] === "other") return KIND_LABELS.other;
   if (first[1].count / total >= 0.6) return KIND_LABELS[first[0]];
