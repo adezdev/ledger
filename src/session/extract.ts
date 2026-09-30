@@ -1,4 +1,4 @@
-import { classifyCommand } from "../analysis/ci.ts";
+import { classifyCommand, commandSegments } from "../analysis/ci.ts";
 import type { DecisionDraft } from "../analysis/decisions.ts";
 import { joinWords } from "../analysis/engineering.ts";
 import { sentences, stripInlineMarkdown, truncate } from "../analysis/text.ts";
@@ -66,6 +66,24 @@ export function extractSessionInsights(sources: readonly SessionSource[], log: E
   return { decisions, findings, summaries };
 }
 
+/**
+ * A command reduced to what identifies it: "bun test test/a.test.ts 2>&1"
+ * becomes "bun test". Paths, quoted arguments, redirections, environment
+ * assignments, and wrappers such as `timeout 60` are dropped.
+ */
+export function commandKey(segment: string): string | undefined {
+  const tokens = segment
+    .replace(/\s*\d?>>?&?\s*\S+/g, "")
+    .trim()
+    .split(/\s+/)
+    .filter((token) => token !== "");
+  while (tokens[0] !== undefined && /^[A-Z_][A-Z0-9_]*=/.test(tokens[0])) tokens.shift();
+  if (tokens[0] === "timeout") tokens.splice(0, /^\d/.test(tokens[1] ?? "") ? 2 : 1);
+  if (tokens[0] === undefined || tokens[0] === "cd" || tokens[0] === "echo") return undefined;
+  const kept = tokens.filter((token, index) => index === 0 || (!/[/\\'"$`]/.test(token) && !/^\.|\.\w{1,5}$/.test(token)));
+  return truncate(kept.slice(0, 4).join(" "), 60);
+}
+
 function candidateSentences(text: string): string[] {
   const withoutCode = text.replace(/```[\s\S]*?```/g, " ").replace(/~~~[\s\S]*?~~~/g, " ");
   return sentences(withoutCode)
@@ -77,10 +95,13 @@ function commandFindings(source: SessionSource, commands: readonly SessionEvent[
   if (commands.length === 0) return [];
   const counts = new Map<string, { count: number; first: SessionEvent }>();
   for (const event of commands) {
-    const command = truncate(event.command ?? event.text, 120);
-    const entry = counts.get(command);
-    if (entry) entry.count++;
-    else counts.set(command, { count: 1, first: event });
+    // Count each command in a pipeline once per event, by its essentials.
+    const keys = new Set(commandSegments(event.command ?? event.text).map(commandKey).filter((key): key is string => key !== undefined));
+    for (const key of keys) {
+      const entry = counts.get(key);
+      if (entry) entry.count++;
+      else counts.set(key, { count: 1, first: event });
+    }
   }
   const notable = [...counts.entries()]
     .filter(([command]) => classifyCommand(command).purposes.length > 0)

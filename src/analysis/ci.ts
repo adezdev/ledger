@@ -42,10 +42,15 @@ export function classifyCommand(command: string, scripts: Readonly<Record<string
   }
   return result;
 }
-/** Splits a shell command line into its individual commands. */
+
+/** Heredoc bodies are data fed to a command, not commands. */
+const HEREDOC = /<<-?\s*(['"]?)([A-Za-z_]\w*)\1[^\n]*\n[\s\S]*?\n\s*\2\s*(?=\n|$)/g;
+
+/** Splits a shell command line (or script) into its individual commands. */
 export function commandSegments(command: string): string[] {
   return command
-    .split(/&&|\|\||;|\|/)
+    .replace(HEREDOC, "")
+    .split(/&&|\|\||;|\||\n/)
     .map((segment) => segment.trim())
     .filter((segment) => segment !== "");
 }
