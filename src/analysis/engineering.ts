@@ -14,6 +14,7 @@ import {
   isTestSource,
   isVendoredOrGenerated,
 } from "./paths.ts";
+import { formatCount } from "../domain/format.ts";
 import { isRecord, markdownSections, parseJsonc, truncate } from "./text.ts";
 import { MARKERS } from "./technology.ts";
 
@@ -66,11 +67,11 @@ export function analyzeEngineering(
     const id = log.add({
       level: "observed",
       category: "testing",
-      statement: `${testFiles.length} test file${plural(testFiles.length)} tracked at HEAD.`,
+      statement: `${formatCount(testFiles.length)} test file${plural(testFiles.length)} tracked at HEAD.`,
       source: { kind: "file-set", description: "Test files at HEAD (by naming convention and test directories)", total: testFiles.length, paths: testFiles.slice(0, 12) },
     });
     const caveat = inlineTestsUncounted ? " Rust unit tests written inside source files are not counted, because Ledger does not read source code." : "";
-    add("testing", { text: `Repository contains ${testFiles.length} ${separately}test file${plural(testFiles.length)}.${caveat}`, level: "observed", evidence: [id] });
+    add("testing", { text: `Repository contains ${formatCount(testFiles.length)} ${separately}test file${plural(testFiles.length)}.${caveat}`, level: "observed", evidence: [id] });
 
     const nonMerge = humanCommits(snapshot.commits).filter((commit) => commit.parents.length <= 1);
     const touching = nonMerge.filter((commit) => commit.changes.some((change) => isTestSource(change.path) || (change.previousPath !== undefined && isTestSource(change.previousPath))));
@@ -79,10 +80,10 @@ export function analyzeEngineering(
       const rangeId = log.add({
         level: "observed",
         category: "testing",
-        statement: `${touching.length} of ${nonMerge.length} ${commitNoun} modified test files.`,
+        statement: `${formatCount(touching.length)} of ${formatCount(nonMerge.length)} ${commitNoun} modified test files.`,
         source: { kind: "commit-range", firstSha: firstTest.sha, lastSha: touching.at(-1)?.sha ?? firstTest.sha, count: touching.length, commits: touching.slice(0, 20).map((commit) => commit.shortSha) },
       });
-      add("testing", { text: `${inlineTestsUncounted ? "Separate test files" : "Test files"} were changed in ${touching.length} of ${nonMerge.length} ${commitNoun}.`, level: "observed", evidence: [rangeId] });
+      add("testing", { text: `${inlineTestsUncounted ? "Separate test files" : "Test files"} were changed in ${formatCount(touching.length)} of ${formatCount(nonMerge.length)} ${commitNoun}.`, level: "observed", evidence: [rangeId] });
       const firstIndex = nonMerge.indexOf(firstTest);
       const firstPath = firstTest.changes.find((change) => isTestSource(change.path))?.path;
       if (firstPath) {
@@ -92,7 +93,7 @@ export function analyzeEngineering(
           statement: `First test file ${code(firstPath)} added.`,
           source: { kind: "commit", sha: firstTest.sha, shortSha: firstTest.shortSha, date: firstTest.authoredAt.slice(0, 10), files: [firstPath] },
         });
-        const when = firstIndex === 0 ? "in the first commit" : `in commit ${firstIndex + 1} of ${nonMerge.length}`;
+        const when = firstIndex === 0 ? "in the first commit" : `in commit ${firstIndex + 1} of ${formatCount(nonMerge.length)}`;
         add("testing", { text: `The first test file, ${code(firstPath)}, was added ${when} (${code(firstTest.shortSha)}).`, level: "observed", evidence: [firstId] });
       }
     }
@@ -281,20 +282,20 @@ export function analyzeEngineering(
       const id = log.add({
         level: "observed",
         category: "history",
-        statement: `${conventional.length} of ${nonMerge.length} ${commitNoun} use a Conventional Commits prefix.`,
+        statement: `${formatCount(conventional.length)} of ${formatCount(nonMerge.length)} ${commitNoun} use a Conventional Commits prefix.`,
         source: { kind: "commit-range", firstSha: first.sha, lastSha: last.sha, count: nonMerge.length },
       });
-      add("process", { text: `${conventional.length} of ${nonMerge.length} ${commitNoun} (${Math.round(share * 100)}%) use Conventional Commits prefixes.`, level: "observed", evidence: [id] });
+      add("process", { text: `${formatCount(conventional.length)} of ${formatCount(nonMerge.length)} ${commitNoun} (${Math.round(share * 100)}%) use Conventional Commits prefixes.`, level: "observed", evidence: [id] });
     }
     const withBody = nonMerge.filter((commit) => commit.body.trim().length >= 20);
     if (withBody.length / nonMerge.length >= 0.25 && first && last) {
       const id = log.add({
         level: "observed",
         category: "history",
-        statement: `${withBody.length} of ${nonMerge.length} ${commitNoun} include a message body.`,
+        statement: `${formatCount(withBody.length)} of ${formatCount(nonMerge.length)} ${commitNoun} include a message body.`,
         source: { kind: "commit-range", firstSha: first.sha, lastSha: last.sha, count: nonMerge.length, commits: withBody.slice(0, 20).map((commit) => commit.shortSha) },
       });
-      add("process", { text: `${withBody.length} of ${nonMerge.length} ${commitNoun} include a message body describing the change.`, level: "observed", evidence: [id] });
+      add("process", { text: `${formatCount(withBody.length)} of ${formatCount(nonMerge.length)} ${commitNoun} include a message body describing the change.`, level: "observed", evidence: [id] });
     }
   }
 

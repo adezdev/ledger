@@ -353,7 +353,7 @@ const KIND_NOUNS: Record<CommitKind, [string, string]> = {
 export function describeKinds(kinds: Partial<Record<CommitKind, number>>): string {
   const entries = Object.entries(kinds).filter((entry): entry is [CommitKind, number] => entry[1] !== undefined && entry[1] > 0);
   entries.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  return joinWords(entries.map(([kind, count]) => `${count} ${KIND_NOUNS[kind][count === 1 ? 0 : 1]}`));
+  return joinWords(entries.map(([kind, count]) => `${formatCount(count)} ${KIND_NOUNS[kind][count === 1 ? 0 : 1]}`));
 }
 
 /** Builds milestone records, with evidence, from commit groups. */
