@@ -56,10 +56,10 @@ describe("milestone bookkeeping", () => {
       makeCommit("fix: typo", { changes: [{ path: "src/lib.rs", additions: 1, deletions: 1 }] }),
     ]);
     if (!feature || !release || !bump || !tagged) throw new Error("fixture");
-    expect(ridesAlong(feature, new Set())).toBe(false);
-    expect(ridesAlong(release, new Set())).toBe(true);
-    expect(ridesAlong(bump, new Set())).toBe(true);
-    expect(ridesAlong(tagged, new Set([tagged.sha]))).toBe(false);
+    expect(ridesAlong(feature, new Map())).toBe(false);
+    expect(ridesAlong(release, new Map())).toBe(true);
+    expect(ridesAlong(bump, new Map())).toBe(true);
+    expect(ridesAlong(tagged, new Map([[tagged.sha, 1]]))).toBe(false);
   });
 
   test("recognizes release bookkeeping subjects", () => {

@@ -1,4 +1,5 @@
 import { subjectText } from "../analysis/commits.ts";
+import { isProjectRelease, releaseWeight } from "../analysis/releases.ts";
 import { joinWords } from "../analysis/engineering.ts";
 import { areaOf } from "../analysis/paths.ts";
 import type { EvidenceLog } from "../domain/evidence.ts";
@@ -22,6 +23,8 @@ const RELATED_TOPIC_SIMILARITY = 0.5;
 const CRUMB_COMMITS = 2;
 const CRUMB_SHARE = 0.1;
 const CRUMB_GAP_HOURS = 24 * 7;
+/** Merges below the target count never produce a milestone larger than this multiple of the ideal size. */
+const VOLUNTARY_SIZE_CAP = 3;
 
 interface Group {
   index: number;
@@ -30,7 +33,10 @@ interface Group {
   end: number;
   topics: Map<string, number>;
   kinds: Map<CommitKind, number>;
-  endsWithTag: boolean;
+  /** Weight of the project release the group ends with; 0 if none. */
+  releaseWeight: number;
+  /** Share of the whole history, by commits and changed lines (see massOf). */
+  mass: number;
   version: number;
   alive: boolean;
   previous: Group | null;
@@ -45,10 +51,10 @@ const MINOR_COMMIT_FILES = 2;
  * milestone: merges (no diff of their own), release bookkeeping, and very
  * small untagged changes such as a one-line CI bump.
  */
-export function ridesAlong(commit: CommitSummary, taggedShas: ReadonlySet<string>): boolean {
+export function ridesAlong(commit: CommitSummary, releaseTags: ReadonlyMap<string, number>): boolean {
   if (commit.isMerge || isReleaseBookkeeping(commit)) return true;
   const small = commit.additions + commit.deletions <= MINOR_COMMIT_LINES && commit.filesChanged <= MINOR_COMMIT_FILES;
-  return small && !taggedShas.has(commit.sha);
+  return small && !releaseTags.has(commit.sha);
 }
 
 const RELEASE_SUBJECT = /^(release\b|bump(ed)? (the )?version|version bump|prepare(s|d)?\b.*\b(release|v?\d+\.\d+)|v?\d+\.\d+\.\d+(-[\w.]+)?$)/i;
@@ -70,18 +76,22 @@ export function targetMilestoneCount(commitCount: number): number {
  * ever merged, so milestones never interleave. Deterministic: ties are broken
  * by position.
  */
-export function groupCommits(commits: readonly CommitSummary[], taggedShas: ReadonlySet<string>): CommitSummary[][] {
+/**
+ * `releaseTags` maps a commit SHA to how strongly its tag marks a project
+ * release (see releaseWeight); a release usually ends a milestone.
+ */
+export function groupCommits(commits: readonly CommitSummary[], releaseTags: ReadonlyMap<string, number>): CommitSummary[][] {
   const units: CommitSummary[][] = [];
   for (const commit of commits) {
     const last = units.at(-1);
-    if (last && ridesAlong(commit, taggedShas)) last.push(commit);
+    if (last && ridesAlong(commit, releaseTags)) last.push(commit);
     else units.push([commit]);
   }
   if (units.length <= 1) return units;
 
   const target = targetMilestoneCount(units.length);
-  const total = commits.length;
-  const groups: Group[] = units.map((unit, index) => createGroup(unit, index, taggedShas));
+  const totals = { commits: commits.length, churn: commits.reduce((sum, commit) => sum + churnOf(commit), 0) };
+  const groups: Group[] = units.map((unit, index) => createGroup(unit, index, releaseTags, totals));
   groups.forEach((group, index) => {
     group.previous = groups[index - 1] ?? null;
     group.next = groups[index + 1] ?? null;
@@ -90,13 +100,12 @@ export function groupCommits(commits: readonly CommitSummary[], taggedShas: Read
   const heap = new MinHeap<Candidate>((a, b) => a.cost - b.cost || a.left.index - b.left.index);
   const consider = (left: Group | null, right: Group | null): void => {
     if (!left || !right) return;
-    heap.push({ cost: mergeCost(left, right, total), left, right, leftVersion: left.version, rightVersion: right.version });
+    heap.push({ cost: mergeCost(left, right, target), left, right, leftVersion: left.version, rightVersion: right.version });
   };
   for (const group of groups) consider(group, group.next);
 
   // A group this small (in commits and changed lines) is a crumb, not a milestone.
-  const totalChurn = commits.reduce((sum, commit) => sum + commit.additions + commit.deletions, 0);
-  const crumbChurn = (CRUMB_SHARE * totalChurn) / target;
+  const crumbChurn = (CRUMB_SHARE * totals.churn) / target;
   let remaining = groups.length;
   for (;;) {
     const candidate = heap.pop();
@@ -105,7 +114,10 @@ export function groupCommits(commits: readonly CommitSummary[], taggedShas: Read
     if (!left.alive || !right.alive || left.version !== candidate.leftVersion || right.version !== candidate.rightVersion) continue;
     // Above the target, the cheapest merge always happens. Below it, only
     // neighbors that clearly continue the same work are merged.
-    if (remaining <= target && !clearlyRelated(left, right) && !absorbsCrumb(left, right, crumbChurn)) continue;
+    if (remaining <= target) {
+      const withinCap = (left.mass + right.mass) * target <= VOLUNTARY_SIZE_CAP;
+      if (!withinCap || (!clearlyRelated(left, right) && !absorbsCrumb(left, right, crumbChurn))) continue;
+    }
     absorb(left, right);
     remaining--;
     consider(left.previous, left);
@@ -117,7 +129,21 @@ export function groupCommits(commits: readonly CommitSummary[], taggedShas: Read
   return result;
 }
 
-function createGroup(commits: CommitSummary[], index: number, taggedShas: ReadonlySet<string>): Group {
+function churnOf(commit: CommitSummary): number {
+  return commit.additions + commit.deletions;
+}
+
+/**
+ * A group's share of the history: half its share of commits, half its share
+ * of changed lines, so one very large commit counts as substantial work.
+ */
+function massOf(commits: readonly CommitSummary[], totals: { commits: number; churn: number }): number {
+  const commitShare = commits.length / Math.max(1, totals.commits);
+  if (totals.churn === 0) return commitShare;
+  return 0.5 * commitShare + 0.5 * (commits.reduce((sum, commit) => sum + churnOf(commit), 0) / totals.churn);
+}
+
+function createGroup(commits: CommitSummary[], index: number, releaseTags: ReadonlyMap<string, number>, totals: { commits: number; churn: number }): Group {
   const times = commits.map((commit) => Date.parse(commit.authoredAt));
   const group: Group = {
     index,
@@ -126,14 +152,15 @@ function createGroup(commits: CommitSummary[], index: number, taggedShas: Readon
     end: Math.max(...times),
     topics: new Map(),
     kinds: new Map(),
-    endsWithTag: commits.some((commit) => taggedShas.has(commit.sha)),
+    releaseWeight: Math.max(0, ...commits.map((commit) => releaseTags.get(commit.sha) ?? 0)),
+    mass: massOf(commits, totals),
     version: 0,
     alive: true,
     previous: null,
     next: null,
   };
   for (const commit of commits) {
-    if (ridesAlong(commit, taggedShas) && commits.length > 1) continue;
+    if (ridesAlong(commit, releaseTags) && commits.length > 1) continue;
     addWeights(group.topics, commitTopics(commit));
     group.kinds.set(commit.classification.kind, (group.kinds.get(commit.classification.kind) ?? 0) + 1);
   }
@@ -167,23 +194,24 @@ export function topicKey(label: string): string {
   return last;
 }
 
-function mergeCost(left: Group, right: Group, total: number): number {
+function mergeCost(left: Group, right: Group, target: number): number {
   const gapHours = Math.max(0, right.start - left.end) / 3_600_000;
   const time = Math.min(1, Math.log1p(gapHours) / Math.log1p(TIME_SATURATION_HOURS));
-  const size = (left.commits.length + right.commits.length) / total;
+  // Quadratic in size relative to an even split, so no milestone swallows the history.
+  const size = ((left.mass + right.mass) * target) ** 2;
   return (
     WEIGHTS.topic * (1 - similarity(left.topics, right.topics)) +
     WEIGHTS.kind * (1 - similarity(left.kinds, right.kinds)) +
     WEIGHTS.time * time +
     WEIGHTS.size * size +
-    (left.endsWithTag ? WEIGHTS.tag : 0)
+    WEIGHTS.tag * left.releaseWeight
   );
 }
 
 /** Merges a crumb into a neighbor unless a tag or a long pause separates them. */
 function absorbsCrumb(left: Group, right: Group, crumbChurn: number): boolean {
   const gapHours = Math.max(0, right.start - left.end) / 3_600_000;
-  if (left.endsWithTag || gapHours > CRUMB_GAP_HOURS) return false;
+  if (left.releaseWeight > 0 || gapHours > CRUMB_GAP_HOURS) return false;
   return isCrumb(left, crumbChurn) || isCrumb(right, crumbChurn);
 }
 
@@ -194,7 +222,7 @@ function isCrumb(group: Group, crumbChurn: number): boolean {
 
 function clearlyRelated(left: Group, right: Group): boolean {
   const gapHours = Math.max(0, right.start - left.end) / 3_600_000;
-  return !left.endsWithTag && gapHours <= RELATED_GAP_HOURS && similarity(left.topics, right.topics) >= RELATED_TOPIC_SIMILARITY;
+  return left.releaseWeight === 0 && gapHours <= RELATED_GAP_HOURS && similarity(left.topics, right.topics) >= RELATED_TOPIC_SIMILARITY;
 }
 
 /** Weighted Jaccard similarity of two distributions (each normalized to sum to 1). */
@@ -219,7 +247,8 @@ function absorb(left: Group, right: Group): void {
   left.end = Math.max(left.end, right.end);
   addWeights(left.topics, right.topics);
   addWeights(left.kinds, right.kinds);
-  left.endsWithTag = right.endsWithTag;
+  left.releaseWeight = right.releaseWeight;
+  left.mass += right.mass;
   left.version++;
   left.next = right.next;
   if (right.next) right.next.previous = left;
@@ -329,16 +358,21 @@ export function describeKinds(kinds: Partial<Record<CommitKind, number>>): strin
 
 /** Builds milestone records, with evidence, from commit groups. */
 export function buildMilestones(commits: readonly CommitSummary[], tags: readonly Tag[], log: EvidenceLog): Milestone[] {
+  // Only releases of the project itself shape and name milestones; component tags do not.
+  const releases = tags.filter((tag) => isProjectRelease(tag.name));
   const tagsBySha = new Map<string, string[]>();
-  for (const tag of tags) tagsBySha.set(tag.sha, [...(tagsBySha.get(tag.sha) ?? []), tag.name]);
-  const groups = groupCommits(commits, new Set(tagsBySha.keys()));
+  const releaseTags = new Map<string, number>();
+  for (const tag of releases) {
+    tagsBySha.set(tag.sha, [...(tagsBySha.get(tag.sha) ?? []), tag.name]);
+    releaseTags.set(tag.sha, Math.max(releaseTags.get(tag.sha) ?? 0, releaseWeight(tag.name)));
+  }
+  const groups = groupCommits(commits, releaseTags);
 
-  const tagged = new Set(tagsBySha.keys());
   return groups.map((group, index): Milestone => {
     const id = `M${index + 1}`;
     const work = group.filter((commit) => !commit.isMerge);
     // Titles and themes describe the substantive commits, not bookkeeping that rode along.
-    const substantive = work.filter((commit) => !ridesAlong(commit, tagged));
+    const substantive = work.filter((commit) => !ridesAlong(commit, releaseTags));
     const described = substantive.length > 0 ? substantive : work;
     const kinds: Partial<Record<CommitKind, number>> = {};
     for (const commit of group) kinds[commit.classification.kind] = (kinds[commit.classification.kind] ?? 0) + 1;

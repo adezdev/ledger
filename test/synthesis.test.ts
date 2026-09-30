@@ -24,7 +24,7 @@ describe("milestone grouping", () => {
 
   test("keeps a single commit as a single milestone", () => {
     const commits = summaries([makeCommit("feat: only", { changes: ["src/a.ts"] })]);
-    expect(subjects(groupCommits(commits, new Set()))).toEqual([["feat: only"]]);
+    expect(subjects(groupCommits(commits, new Map()))).toEqual([["feat: only"]]);
   });
 
   test("groups by shared area and splits on long gaps", () => {
@@ -39,7 +39,7 @@ describe("milestone grouping", () => {
       makeCommit("docs(ui): screenshots", { at: day(20, 12), changes: ["src/ui/README.md"] }),
       makeCommit("feat(ui): menu", { at: day(20, 13), changes: ["src/ui/menu.ts"] }),
     ]);
-    expect(subjects(groupCommits(commits, new Set()))).toEqual([
+    expect(subjects(groupCommits(commits, new Map()))).toEqual([
       ["feat(parser): tokenizer", "feat(parser): grammar", "test(parser): cases", "feat(parser): errors"],
       ["feat(ui): layout", "feat(ui): theme", "fix(ui): contrast", "docs(ui): screenshots", "feat(ui): menu"],
     ]);
@@ -52,7 +52,7 @@ describe("milestone grouping", () => {
       makeCommit("feat: c", { at: day(1, 11), changes: ["src/core/c.ts"] }),
       makeCommit("feat: d", { at: day(1, 12), changes: ["src/core/d.ts"] }),
     ];
-    const tagged = new Set([raw[1]?.sha ?? ""]);
+    const tagged = new Map([[raw[1]?.sha ?? "", 1]]);
     expect(subjects(groupCommits(summaries(raw), tagged))).toEqual([
       ["feat: a", "feat: b"],
       ["feat: c", "feat: d"],
@@ -66,7 +66,7 @@ describe("milestone grouping", () => {
       makeCommit("feat: b", { at: day(9), changes: ["lib/b.ts"] }),
       makeCommit("feat: c", { at: day(9, 11), changes: ["lib/c.ts"] }),
     ]);
-    const groups = subjects(groupCommits(commits, new Set()));
+    const groups = subjects(groupCommits(commits, new Map()));
     expect(groups[0]).toEqual(["feat: a", "Merge branch 'a'"]);
   });
 
@@ -77,8 +77,8 @@ describe("milestone grouping", () => {
       raw.push(makeCommit(`feat: change ${i}`, { at: new Date(Date.UTC(2024, 0, 1) + i * 5 * 3_600_000).toISOString(), changes: [`${area}/file${i % 3}.ts`] }));
     }
     const commits = summaries(raw);
-    const first = groupCommits(commits, new Set());
-    const second = groupCommits(commits, new Set());
+    const first = groupCommits(commits, new Map());
+    const second = groupCommits(commits, new Map());
     expect(subjects(first)).toEqual(subjects(second));
     expect(first.flat().map((commit) => commit.sha)).toEqual(commits.map((commit) => commit.sha));
     expect(first.map((group) => group.length)).toEqual([15, 15, 15, 15]);
