@@ -31,7 +31,7 @@ function emptyManifest(path: string, ecosystem: Manifest["ecosystem"]): Manifest
 export function isManifestPath(path: string): boolean {
   const name = baseName(path);
   return (
-    ["package.json", "Cargo.toml", "pyproject.toml", "go.mod", "CMakeLists.txt", "deno.json", "deno.jsonc"].includes(name) ||
+    ["package.json", "Cargo.toml", "pyproject.toml", "setup.cfg", "go.mod", "CMakeLists.txt", "deno.json", "deno.jsonc"].includes(name) ||
     /\.(csproj|fsproj)$/.test(name)
   );
 }
@@ -43,6 +43,7 @@ export function parseManifest(path: string, text: string): Manifest | null {
     if (name === "deno.json" || name === "deno.jsonc") return parseDenoJson(path, text);
     if (name === "Cargo.toml") return parseCargoToml(path, text);
     if (name === "pyproject.toml") return parsePyproject(path, text);
+    if (name === "setup.cfg") return parseSetupCfg(path, text);
     if (name === "go.mod") return parseGoMod(path, text);
     if (name === "CMakeLists.txt") return parseCMake(path, text);
     if (/\.(csproj|fsproj)$/.test(name)) return parseDotnetProject(path, text);
@@ -160,6 +161,68 @@ function parsePyproject(path: string, text: string): Manifest {
     }
   }
   return manifest;
+}
+
+/** setuptools' declarative configuration. `setup.py` is code and is never read. */
+function parseSetupCfg(path: string, text: string): Manifest | null {
+  const ini = parseIni(text);
+  const metadata = ini.get("metadata");
+  if (!metadata) return null;
+  const manifest = emptyManifest(path, "python");
+  // "attr:" and "file:" values point elsewhere; they are not the value itself.
+  const literal = (key: string): string | undefined => {
+    const value = metadata.get(key)?.trim();
+    return value && !/^(attr|file):/.test(value) ? value : undefined;
+  };
+  const name = literal("name");
+  const description = literal("description") ?? literal("summary");
+  const version = literal("version");
+  const license = literal("license");
+  const homepage = literal("url") ?? literal("home_page");
+  if (name) manifest.name = name;
+  if (description) manifest.description = description;
+  if (version) manifest.version = version;
+  if (license) manifest.license = license;
+  if (homepage) manifest.homepage = homepage;
+  manifest.dependencies = listValue(ini.get("options")?.get("install_requires")).map(requirementName);
+  manifest.binaries = listValue(ini.get("options.entry_points")?.get("console_scripts")).map((entry) => entry.split("=")[0]?.trim() ?? "").filter(Boolean);
+  for (const tool of ["tool:pytest", "mypy", "flake8", "isort"]) {
+    if (ini.has(tool)) manifest.details[`tool.${tool.replace("tool:", "")}`] = "configured";
+  }
+  return manifest;
+}
+
+function listValue(value: string | undefined): string[] {
+  return (value ?? "")
+    .split("\n")
+    // Drop environment markers such as `; python_version < "3.8"`.
+    .map((line) => line.split(";")[0]?.trim() ?? "")
+    .filter((line) => line !== "" && !line.startsWith("#"));
+}
+
+/** INI sections to key/value maps; indented lines continue the previous value. */
+export function parseIni(text: string): Map<string, Map<string, string>> {
+  const sections = new Map<string, Map<string, string>>();
+  let section: Map<string, string> | undefined;
+  let key: string | undefined;
+  for (const line of text.split(/\r?\n/)) {
+    if (/^\s*[#;]/.test(line) || line.trim() === "") continue;
+    const header = /^\[([^\]]+)\]\s*$/.exec(line);
+    if (header?.[1]) {
+      section = new Map();
+      sections.set(header[1].trim(), section);
+      key = undefined;
+    } else if (/^\s/.test(line) && section && key !== undefined) {
+      section.set(key, `${section.get(key) ?? ""}\n${line.trim()}`);
+    } else {
+      const assignment = /^([^=:]+?)\s*[=:]\s*(.*)$/.exec(line);
+      if (section && assignment?.[1] !== undefined) {
+        key = assignment[1].trim().toLowerCase().replace(/-/g, "_");
+        section.set(key, assignment[2] ?? "");
+      }
+    }
+  }
+  return sections;
 }
 
 function requirementName(requirement: string): string {
