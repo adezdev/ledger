@@ -27,15 +27,18 @@ const TYPE_ALIASES: Record<string, CommitKind> = {
 };
 
 const KEYWORDS: [RegExp, CommitKind][] = [
+  [/^(fix(ed)? )?typos?\b/i, "docs"],
   [/^(fix|fixed|fixes|fixing|bugfix|hotfix|resolve|resolved|resolves|correct|corrected)\b/i, "fix"],
   [/^revert\b/i, "revert"],
-  [/^(add|added|adds|adding|implement|implemented|implements|introduce|introduced|create|created|support|enable|enabled)\b/i, "feat"],
+  [/^(release|released|releasing|regenerate[sd]?|misc)\b/i, "chore"],
+  [/^(add|added|adds|adding|implement|implemented|implements|introduce|introduced|create|created|support|enable|enabled|start|started)\b/i, "feat"],
   [/^(refactor|refactored|restructure|restructured|rename|renamed|reorganize|reorganized|extract|extracted|simplify|simplified|clean ?up|cleanup|split|move|moved)\b/i, "refactor"],
   [/^(docs?|document|documented|readme)\b/i, "docs"],
   [/^(test|tests|testing)\b/i, "test"],
   [/^(perf|optimize|optimized|optimise|speed up)\b/i, "perf"],
   [/^(bump|upgrade|upgraded|update dependencies|update deps)\b/i, "build"],
-  [/^(format|formatted|lint|reformat)\b/i, "style"],
+  [/^(update[sd]?|upgrade[sd]?)\b.*(\bdeps?\b|dependenc|submodule|\bto v?\d)/i, "build"],
+  [/^(format|formatted|lint|reformat|pep ?8)\b/i, "style"],
 ];
 
 /**
