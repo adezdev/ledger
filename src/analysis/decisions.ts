@@ -22,6 +22,8 @@ const MAX_INFERRED_DECISIONS = 10;
  */
 const DECISION_HEADING =
   /^(?:(?:key|core|main|major|notable|important|design|technical|architecture|architectural|engineering|product|implementation)\s+)*(?:decisions?|decision log|choices|trade-?offs|rationale|principles)$|^why\b.*\?$/i;
+/** "Why should I use X?" addresses the reader: a sales pitch or FAQ, not design rationale. */
+const READER_QUESTION = /\b(I|you|your)\b/i;
 
 /** Decisions stated in architecture decision records and design sections of documentation. */
 export function decisionsFromDocuments(documents: ReadonlyMap<string, string>, log: EvidenceLog): DecisionDraft[] {
@@ -78,6 +80,7 @@ function decisionsFromSections(path: string, text: string, log: EvidenceLog, lim
   for (const section of markdownSections(text)) {
     if (decisions.length >= limit) break;
     if (section.level === 0 || !DECISION_HEADING.test(section.title) || section.body === "") continue;
+    if (/^why\b/i.test(section.title) && READER_QUESTION.test(section.title)) continue;
     const items = topLevelListItems(section.body, section.line + 1);
 
     if (items.length >= 2) {
