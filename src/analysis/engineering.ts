@@ -127,8 +127,13 @@ export function analyzeEngineering(
   }
 
   // Continuous integration ------------------------------------------------------
+  // With several workflows, those without a recognized purpose (release, stale-issue,
+  // publishing jobs) are summarized in one statement instead of one each.
+  const unrecognized = ciConfigurations.filter((configuration) => configuration.commands.every((command) => command.purposes.length === 0));
+  const summarizeUnrecognized = unrecognized.length >= 2;
   for (const configuration of ciConfigurations) {
     const purposeful = configuration.commands.filter((command) => command.purposes.length > 0);
+    if (purposeful.length === 0 && summarizeUnrecognized) continue;
     if (purposeful.length === 0) {
       // Shell plumbing (set -e, git config, echo, control flow) says nothing about what the workflow does.
       const commands = uniqueBy(configuration.commands, (command) => command.command).filter((command) => !SHELL_PLUMBING.test(command.command));
@@ -161,6 +166,19 @@ export function analyzeEngineering(
       source: { kind: "file", path: configuration.path, ...(first ? { line: first.line } : {}), excerpt: purposeful.map((command) => command.command).join("\n") },
     });
     add("ci", { text: `${configuration.system} configuration ${code(configuration.path)} includes steps running ${joinWords(described)}.`, level: "observed", evidence: [id] });
+  }
+
+  if (summarizeUnrecognized) {
+    const id = log.add({
+      level: "observed",
+      category: "ci",
+      statement: `${unrecognized.length} CI configurations run no command recognized as tests, linting, or builds.`,
+      source: { kind: "file-set", description: "CI configurations without recognized test, lint, or build steps", total: unrecognized.length, paths: unrecognized.map((configuration) => configuration.path) },
+    });
+    const shown = unrecognized.slice(0, 4).map((configuration) => code(configuration.path));
+    if (unrecognized.length > shown.length) shown.push(`${unrecognized.length - shown.length} more`);
+    const other = unrecognized.length < ciConfigurations.length ? " other" : "";
+    add("ci", { text: `${formatCount(unrecognized.length)}${other} CI configurations, such as release or maintenance workflows, run no step recognized as tests, linting, or builds: ${joinWords(shown)}.`, level: "observed", evidence: [id] });
   }
 
   // Type checking -----------------------------------------------------------------
