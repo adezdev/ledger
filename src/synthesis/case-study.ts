@@ -349,6 +349,9 @@ function writeLimitations(
   }
   if (snapshot.isShallow) limitations.push("The repository is a shallow clone, so history before the shallow boundary is missing.");
   if (summaries.length === 1) limitations.push("The history has a single commit, so there is no development timeline to analyze.");
+  if (testFiles > 0 && snapshot.files.some((file) => file.path.endsWith(".rs"))) {
+    limitations.push("Rust unit tests written inside source files are not counted; test figures cover only separate test files, such as those under `tests/`.");
+  }
   if (testFiles === 0) limitations.push("No test files were detected by naming convention; tests embedded in source files (for example Rust unit tests) are not counted.");
   if (ciFiles === 0) limitations.push("No CI configuration was found among tracked files.");
   if (sessions.length === 0) {

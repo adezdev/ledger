@@ -54,6 +54,9 @@ export function analyzeEngineering(
   // Commit statistics cover commits by people; say so when automated commits were left out.
   const commitNoun = snapshot.commits.some((commit) => isAutomatedAuthor(commit.authorName)) ? "non-merge commits by people" : "non-merge commits";
   const testFiles = paths.filter(isTestSource);
+  // Rust unit tests conventionally live inside source files, which Ledger does not read.
+  const inlineTestsUncounted = paths.some((path) => path.endsWith(".rs"));
+  const separately = inlineTestsUncounted ? "separate " : "";
   const ciFiles = paths.filter((path) => ciSystemOf(path) !== undefined);
   const documentationFiles = paths.filter(isDocumentation);
   const rootManifest = manifests.find((manifest) => !manifest.path.includes("/"));
@@ -66,7 +69,8 @@ export function analyzeEngineering(
       statement: `${testFiles.length} test file${plural(testFiles.length)} tracked at HEAD.`,
       source: { kind: "file-set", description: "Test files at HEAD (by naming convention and test directories)", total: testFiles.length, paths: testFiles.slice(0, 12) },
     });
-    add("testing", { text: `Repository contains ${testFiles.length} test file${plural(testFiles.length)}.`, level: "observed", evidence: [id] });
+    const caveat = inlineTestsUncounted ? " Rust unit tests written inside source files are not counted, because Ledger does not read source code." : "";
+    add("testing", { text: `Repository contains ${testFiles.length} ${separately}test file${plural(testFiles.length)}.${caveat}`, level: "observed", evidence: [id] });
 
     const nonMerge = humanCommits(snapshot.commits).filter((commit) => commit.parents.length <= 1);
     const touching = nonMerge.filter((commit) => commit.changes.some((change) => isTestSource(change.path) || (change.previousPath !== undefined && isTestSource(change.previousPath))));
@@ -78,7 +82,7 @@ export function analyzeEngineering(
         statement: `${touching.length} of ${nonMerge.length} ${commitNoun} modified test files.`,
         source: { kind: "commit-range", firstSha: firstTest.sha, lastSha: touching.at(-1)?.sha ?? firstTest.sha, count: touching.length, commits: touching.slice(0, 20).map((commit) => commit.shortSha) },
       });
-      add("testing", { text: `Test files were changed in ${touching.length} of ${nonMerge.length} ${commitNoun}.`, level: "observed", evidence: [rangeId] });
+      add("testing", { text: `${inlineTestsUncounted ? "Separate test files" : "Test files"} were changed in ${touching.length} of ${nonMerge.length} ${commitNoun}.`, level: "observed", evidence: [rangeId] });
       const firstIndex = nonMerge.indexOf(firstTest);
       const firstPath = firstTest.changes.find((change) => isTestSource(change.path))?.path;
       if (firstPath) {

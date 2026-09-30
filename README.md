@@ -152,6 +152,7 @@ The case study (`src/domain/model.ts`) is the contract between analysis and pres
 - Decisions are found only where they are stated explicitly (ADRs, design sections, "Why ...?" headings, explicit commit messages, session transcripts) or visible as tooling changes. Undocumented reasoning stays undocumented.
 - Line counts exclude lockfiles, binary files, merge commits, and automated commits; author dates can be rewritten by rebases.
 - Automated commits are recognized by author name (`*[bot]`, Dependabot, Renovate, ...). A bot committing under a person's name counts as that person.
+- Rust unit tests inside source files are not counted as test files, because Ledger does not read source code.
 - The whole history is held in memory, which is fine for typical projects but not tuned for very large monorepos.
 
 ## Development
