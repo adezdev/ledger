@@ -3,7 +3,7 @@ import { EvidenceLog } from "../src/domain/evidence.ts";
 import type { Commit } from "../src/domain/model.ts";
 import { buildCaseStudy, safeHomepage } from "../src/synthesis/case-study.ts";
 import { formatCount, formatDate, inclusiveDays } from "../src/synthesis/format.ts";
-import { buildMilestones, groupCommits, targetMilestoneCount } from "../src/synthesis/milestones.ts";
+import { buildMilestones, groupCommits, targetMilestoneCount, workLabel } from "../src/synthesis/milestones.ts";
 import { makeCommit, makeSnapshot, summaries } from "./helpers/builders.ts";
 
 function day(n: number, hour = 10): string {
@@ -94,6 +94,29 @@ describe("milestone grouping", () => {
     expect(milestone?.tags).toEqual(["v0.1.0"]);
     const evidence = log.items.find((item) => item.id === milestone?.evidence[0]);
     expect(evidence).toMatchObject({ level: "inferred", category: "milestone", source: { kind: "commit-range", count: 2 } });
+  });
+});
+
+describe("milestone titles", () => {
+  test("name one dominant kind, two shared kinds, or mixed work", () => {
+    const kinds = (...subjects: string[]) => summaries(subjects.map((subject) => makeCommit(subject, { changes: ["src/a.ts"] })));
+    expect(workLabel(kinds("feat: a", "feat: b", "fix: c"))).toBe("Feature work");
+    const mixed = summaries([
+      makeCommit("fix: a", { changes: ["src/a.ts"] }),
+      makeCommit("fix: b", { changes: ["src/a.ts"] }),
+      makeCommit("test: c", { changes: [{ path: "test/a.test.ts", additions: 400 }] }),
+      makeCommit("build: d", { changes: [{ path: "package.json", additions: 1 }] }),
+    ]);
+    expect(workLabel(mixed)).toBe("Fixes and testing");
+    expect(workLabel(kinds("fix: a", "fix: b", "build: c"))).toBe("Fixes");
+    expect(workLabel(kinds("fix: a", "build: b", "build: c", "fix: d"))).toBe("Fixes and build tooling");
+    expect(workLabel(kinds("feat: a", "fix: b", "docs: c", "test: d"))).toBe("Development");
+  });
+
+  test("do not repeat the kind as a theme", () => {
+    const raw = [makeCommit("docs: guide", { at: day(1), changes: ["docs/guide.md"] }), makeCommit("docs: readme", { at: day(1, 11), changes: ["README.md"] })];
+    const [milestone] = buildMilestones(summaries(raw), [], new EvidenceLog());
+    expect(milestone?.title).toBe("Documentation");
   });
 });
 

@@ -21,7 +21,7 @@ describe("path classification", () => {
     for (const path of ["src/app.test.ts", "pkg/parser_test.go", "tests/test_api.py", "spec/user_spec.rb", "src/__tests__/a.js", "FooTests.cs"]) {
       expect(isTestSource(path)).toBe(true);
     }
-    for (const path of ["src/testing.ts", "docs/testing.md", "test/fixtures/data.json", "latest.ts"]) {
+    for (const path of ["src/testing.ts", "docs/testing.md", "test/fixtures/data.json", "latest.ts", "test/helpers/repo.ts", "tests/support/db.py"]) {
       expect(isTestSource(path)).toBe(false);
     }
   });
@@ -220,6 +220,23 @@ describe("decisions", () => {
     expect(decisions[1]?.detail).toBe("Keeps installs fast.");
     const source = log.items.find((item) => item.id === decisions[1]?.evidence[0])?.source;
     expect(source).toMatchObject({ kind: "file", path: "README.md", section: "Design decisions" });
+  });
+
+  test("only treats headings that are about decisions as decision sections", () => {
+    const log = new EvidenceLog();
+    const documents = new Map([
+      ["docs/notes.md", "# Notes\n\n## Decisions (`src/decisions.ts`)\n\nHow the decision extractor works.\n\n## Key technical decisions\n\nWe store everything in plain files.\n\n## Trade-offs\n\nSimplicity over raw speed.\n"],
+    ]);
+    expect(decisionsFromDocuments(documents, log).map((decision) => decision.title)).toEqual(["Key technical decisions", "Trade-offs"]);
+  });
+
+  test("reads rationale across hard-wrapped commit body lines", () => {
+    const log = new EvidenceLog();
+    const [decision] = decisionsFromCommits(
+      [makeCommit("feat: store reports as files", { body: "Keep reports as plain files instead of a database\nbecause users need to commit and diff them.\n\n- unrelated bullet" })],
+      log,
+    );
+    expect(decision?.detail).toBe("Keep reports as plain files instead of a database because users need to commit and diff them.");
   });
 
   test("takes decisions from explicit commit messages only", () => {
