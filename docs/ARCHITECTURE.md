@@ -79,14 +79,14 @@ Level assignment rules:
 | `generator` | `{ name: "ledger", version }` |
 | `project` | name, optional description statement, repository directory name, branch, HEAD SHA, optional homepage (http/https only), license, version, tags |
 | `overview` | `Statement[]` |
-| `metrics` | commit and merge counts, contributors, first/latest commit timestamps, timespan and active days, tracked and touched files, additions/deletions (lockfiles, binaries, merges excluded), test/CI/doc file counts, language shares |
+| `metrics` | commit, merge, and automated-commit counts (with the automation accounts' names), contributors, first/latest commit timestamps, timespan and active days, tracked and touched files, additions/deletions, test/CI/doc file counts, language shares. Activity figures cover commits by people: automated commits, lockfiles, binaries, and merge diffs are excluded |
 | `technologies` | `{ name, kind, level, basis, evidence }[]` |
 | `timeline` | `Milestone[]`: id, title, inferred summary statement, start/end, commit SHAs, themes, kind counts, tags, line counts, evidence |
 | `decisions` | `Decision[]`: id, title, `status` (`documented` or `inferred`), detail, basis, date, evidence |
 | `findings` | `{ area, statement }[]` where area is testing, ci, types, linting, build, benchmarks, documentation, release, process, or session |
 | `selectedCommits` | SHA, subject, date, size, milestone, reasons, evidence |
 | `sessions` | per supplied file: format, event and command counts, time range, import warnings |
-| `commits` | every analyzed commit with classification and file changes |
+| `commits` | every analyzed commit with classification, file changes, and an `automated` flag |
 | `evidence` | `Evidence[]` |
 | `limitations` | strings (may contain code spans) |
 
@@ -100,15 +100,19 @@ Timestamps are ISO 8601 exactly as Git recorded them (with the author's offset);
 
 A Conventional Commits prefix is taken as declared (`source: "conventional"`). Otherwise the first word of the subject is matched against keyword lists (`"keyword"`), and failing that the changed files decide (`"structure"`: all docs, all tests, all CI, all manifests). The overview only calls the type breakdown observed when at least 80% of commits declare their type.
 
+### Automated commits (`analysis/commits.ts`)
+
+Commits whose author name marks an automation account (`*[bot]`, Dependabot, Renovate, and similar) are flagged `automated`. They stay in `commits` and are counted in `metrics.automatedCommits`, but activity figures, milestones, selected commits, commit-message decisions, and commit-practice statistics use commits by people only, and the report says so. A bot that commits under a person's name is not recognized.
+
 ### Milestones (`synthesis/milestones.ts`)
 
 Agglomerative clustering over *adjacent* groups only, so milestones never interleave:
 
-1. Each non-merge commit starts as a group; merge commits join the group before them.
+1. Each commit starts as a group, except commits that ride along with the group before them: merges (no diff of their own), release bookkeeping (`chore(release): ...`, "prepare 0.1.0", version bumps), and very small untagged commits (at most 5 changed lines in at most 2 files).
 2. The merge cost of two neighbors combines topic dissimilarity (weighted Jaccard over Conventional Commits scopes and changed areas, where `src/cli` and scope `cli` are the same topic), commit-type dissimilarity, the time gap (log scale, saturating at two weeks), the combined size, and a penalty when the left group ends at a tag.
-3. The cheapest merge is applied until at most `round(sqrt(n))` groups remain (capped at 12). Below that, neighbors merge only if they share at least half their topics, are within 12 hours, and are not separated by a tag.
+3. The cheapest merge is applied until at most `round(sqrt(n))` groups remain (capped at 12). Below that, neighbors merge only if they share at least half their topics and are within 12 hours, or if one of them is a crumb (at most 2 commits and under 10% of an average milestone's changed lines) within a week. Neither rule merges across a tag.
 
-Titles come from the dominant commit type and the top themes (for example "Feature work: session, render"), prefixed with the tag when a milestone contains one.
+Titles come from the commit types and top themes of the substantive commits, ignoring ride-along bookkeeping (for example "Feature work and fixes: session, render"), prefixed with the tag or tag range a milestone contains ("v0.2.0 – v0.8.0").
 
 ### Selected commits (`synthesis/highlights.ts`)
 
@@ -116,8 +120,10 @@ Scores favor a descriptive message body, tests changed together with implementat
 
 ### Decisions (`analysis/decisions.ts`, `session/extract.ts`)
 
-Documented decisions come from ADR files (title, status, "Decision" section), from sections whose heading names decisions, rationale, trade-offs, principles, or asks "Why ...?" (each top-level list item becomes a decision), from commit subjects that state a replacement or switch, from commit bodies of non-fix commits that give a reason ("because", "instead of", ...), and from session sentences that state a choice. Inferred decisions come from tooling marker files (lockfiles, CI workflows, linter configs) that first appear after the initial commit, or that disappear, with a replacement in the same category read as a migration.
+Documented decisions come from ADR files (title, status, "Decision" section), from sections whose heading is about decisions, rationale, trade-offs, or principles or asks "Why ...?" (each top-level list item becomes a decision), from commit subjects that state a replacement or switch, from commit bodies of non-fix commits that give a reason ("because", "instead of", ...), and from session sentences that state a choice. A session sentence qualifies if it states a choice outright ("decided to", "chose", "went with", "I'll use", "in favor of") or pairs "instead of"/"rather than" with a verb such as use, keep, switch, or replace; sentences ending in ":" or "?" never qualify, and at most two decisions come from one message. Inferred decisions come from tooling marker files (lockfiles, CI workflows, linter configs) that first appear after the initial commit, or that disappear, with a replacement in the same category read as a migration.
 
 ### Engineering findings (`analysis/engineering.ts`)
 
-Findings describe presence and configuration only: test files by naming convention, how many commits touched tests, package scripts for tests/type checking/linting/builds, CI commands classified by purpose (with `bun run x`-style commands resolved to the script they run), strict compiler flags, lint configuration files, benchmark files, documentation structure, tags, and commit-message practice.
+Findings describe presence and configuration only: test files by naming convention (with a caveat for Rust, whose unit tests usually live inside source files that Ledger does not read), how many commits touched tests, package scripts for tests/type checking/linting/builds, CI commands classified by purpose (with `bun run x`-style commands, including chained ones, resolved to the scripts they run; workflows with no recognized purpose list their commands, minus shell plumbing), strict compiler flags, lint configuration files, benchmark files, documentation structure, tags, and commit-message practice.
+
+In sessions, recorded commands are split into individual commands (heredoc bodies removed) and counted by their essentials, so `bun test test/a.test.ts 2>&1 | tail` counts as `bun test`.
