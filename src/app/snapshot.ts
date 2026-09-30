@@ -13,7 +13,7 @@ import {
 } from "../git/repository.ts";
 
 /** Gathers everything Ledger needs from a repository. Read-only; runs nothing from the repository. */
-export async function collectSnapshot(path: string): Promise<RepositorySnapshot> {
+export async function collectSnapshot(path: string): Promise<{ root: string; snapshot: RepositorySnapshot }> {
   const { root, name } = await findRepository(path);
   const headSha = await readHead(root);
   const [branch, isShallow, tags, files, commits] = await Promise.all([
@@ -21,7 +21,7 @@ export async function collectSnapshot(path: string): Promise<RepositorySnapshot>
     readIsShallow(root),
     readTags(root),
     readTrackedFiles(root, headSha),
-    readCommits(root),
+    readCommits(root, headSha),
   ]);
 
   const selection = selectDocuments(files);
@@ -42,14 +42,17 @@ export async function collectSnapshot(path: string): Promise<RepositorySnapshot>
 
   const commitShas = new Set(commits.map((commit) => commit.sha));
   return {
-    name,
-    branch,
-    headSha,
-    isShallow,
-    tags: tags.filter((tag) => commitShas.has(tag.sha)),
-    files,
-    commits,
-    documents,
-    skippedDocuments,
+    root,
+    snapshot: {
+      name,
+      branch,
+      headSha,
+      isShallow,
+      tags: tags.filter((tag) => commitShas.has(tag.sha)),
+      files,
+      commits,
+      documents,
+      skippedDocuments,
+    },
   };
 }

@@ -10,24 +10,22 @@ const RECORD_MARKER = "\x1eLEDGER";
 const HEADER_FIELDS = ["%H", "%h", "%P", "%aN", "%aI", "%s", "%b"] as const;
 const LOG_FORMAT = `${RECORD_MARKER}%x00${HEADER_FIELDS.join("%x00")}%x00`;
 
-export const LOG_ARGS: readonly string[] = [
+const LOG_OPTIONS: readonly string[] = [
   "log",
   "-z",
   "--raw",
   "--numstat",
-  "--no-abbrev",
   "-M",
   "--diff-merges=off",
   "--no-ext-diff",
   "--no-textconv",
   "--no-color",
   `--format=${LOG_FORMAT}`,
-  "HEAD",
-  "--",
 ];
 
-export async function readCommits(root: string): Promise<Commit[]> {
-  const output = await runGit(LOG_ARGS, { cwd: root });
+/** Reads every commit reachable from `revision` (a commit SHA). */
+export async function readCommits(root: string, revision: string): Promise<Commit[]> {
+  const output = await runGit([...LOG_OPTIONS, revision, "--"], { cwd: root });
   // Git lists newest first; the domain model is chronological.
   return parseLog(output).reverse();
 }
@@ -39,7 +37,7 @@ export class LogParseError extends Error {
   }
 }
 
-/** Parses the output of `git log` run with {@link LOG_ARGS}. Order is preserved. */
+/** Parses the output of `git log` run with {@link LOG_OPTIONS}. Order is preserved. */
 export function parseLog(output: string): Commit[] {
   const tokens = output.split("\0");
   const commits: Commit[] = [];

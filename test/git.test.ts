@@ -53,7 +53,7 @@ describe("commit history", () => {
   test("reads a single-commit repository", async () => {
     const repo = await fixture();
     const sha = await repo.commit("Initial commit", { "README.md": "# Solo\n" });
-    const commits = await readCommits(repo.root);
+    const commits = await readCommits(repo.root, "HEAD");
     expect(commits).toHaveLength(1);
     const [commit] = commits;
     expect(commit?.sha).toBe(sha);
@@ -69,7 +69,7 @@ describe("commit history", () => {
     await repo.commit("feat: first", { "a.txt": "1\n2\n3\n" });
     await repo.commit("fix(core): second\n\nExplain why the fix is needed.\nSecond line.", { "a.txt": "1\n3\n4\n5\n" });
     await repo.commit("chore: empty");
-    const commits = await readCommits(repo.root);
+    const commits = await readCommits(repo.root, "HEAD");
     expect(commits.map((commit) => commit.subject)).toEqual(["feat: first", "fix(core): second", "chore: empty"]);
     expect(commits[1]?.body).toBe("Explain why the fix is needed.\nSecond line.");
     expect(commits[1]?.changes).toEqual([{ path: "a.txt", status: "modified", additions: 2, deletions: 1 }]);
@@ -92,7 +92,7 @@ describe("commit history", () => {
     repo.advance(1);
     await repo.git("merge", "--quiet", "--no-ff", "feature", "-m", "Merge branch 'feature'");
 
-    const commits = await readCommits(repo.root);
+    const commits = await readCommits(repo.root, "HEAD");
     const first = commits[0];
     expect(first?.changes.map((change) => change.path).sort()).toEqual(["docs/read me.md", "données/résumé ✓.txt", "image.bin"]);
     expect(first?.changes.find((change) => change.path === "image.bin")).toMatchObject({ additions: null, deletions: null });
@@ -134,7 +134,7 @@ describe("snapshot", () => {
     await repo.write("untracked.md", "# untracked\n");
     await repo.write("README.md", "# Modified in working tree only\n");
 
-    const snapshot = await collectSnapshot(repo.root);
+    const { snapshot } = await collectSnapshot(repo.root);
     const paths = snapshot.files.map((file) => file.path).sort();
     expect(paths).toEqual([".env", ".gitignore", "README.md", "package.json", "src/index.ts"]);
     expect(snapshot.documents.get("README.md")).toContain("A tool that does a thing well.");
@@ -149,7 +149,7 @@ describe("snapshot", () => {
     await repo.git("tag", "v0.1.0");
     const second = await repo.commit("two", { "a.txt": "b\n" });
     await repo.git("tag", "-a", "v0.2.0", "-m", "release");
-    const snapshot = await collectSnapshot(repo.root);
+    const { snapshot } = await collectSnapshot(repo.root);
     expect(snapshot.tags).toEqual([
       { name: "v0.1.0", sha: first },
       { name: "v0.2.0", sha: second },
