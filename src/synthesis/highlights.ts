@@ -1,4 +1,4 @@
-import { isDocumentation, isLockfile, isTestSource, isVendoredOrGenerated } from "../analysis/paths.ts";
+import { isDocumentation, isLockfile, isTestFile, isTestSource, isVendoredOrGenerated } from "../analysis/paths.ts";
 import type { EvidenceLog } from "../domain/evidence.ts";
 import type { Commit, CommitSummary, Milestone, SelectedCommit, Tag } from "../domain/model.ts";
 import { code } from "../domain/statement.ts";
@@ -36,12 +36,12 @@ export function selectCommits(
   if (eligible.length === 0) return [];
   const count = Math.max(1, Math.min(MAX_SELECTED_COMMITS, Math.ceil(eligible.length / 3)));
 
+  // "Largest in its milestone" only means something when there was a choice.
   const largestInMilestone = new Map<string, string>();
   for (const milestone of milestones) {
-    const largest = eligible
-      .filter((commit) => milestoneOf.get(commit.sha) === milestone)
-      .sort((a, b) => b.additions + b.deletions - (a.additions + a.deletions))[0];
-    if (largest) largestInMilestone.set(milestone.id, largest.sha);
+    const candidates = eligible.filter((commit) => milestoneOf.get(commit.sha) === milestone);
+    const largest = [...candidates].sort((a, b) => b.additions + b.deletions - (a.additions + a.deletions))[0];
+    if (largest && candidates.length >= 3) largestInMilestone.set(milestone.id, largest.sha);
   }
 
   const scored: Scored[] = eligible.map((commit) => {
@@ -59,7 +59,7 @@ export function selectCommits(
 
     const paths = commit.changes.map((change) => change.path);
     const touchesTests = paths.some(isTestSource);
-    const touchesSource = paths.some((path) => !isTestSource(path) && !isDocumentation(path) && !isLockfile(path) && !isVendoredOrGenerated(path));
+    const touchesSource = paths.some((path) => !isTestFile(path) && !isDocumentation(path) && !isLockfile(path) && !isVendoredOrGenerated(path));
     if (touchesTests && touchesSource) {
       score += 1.5;
       reasons.push("Changes tests alongside implementation");
@@ -87,12 +87,13 @@ export function selectCommits(
   });
 
   const ranked = [...scored].sort((a, b) => b.score - a.score || a.index - b.index);
+  const median = ranked[Math.floor(ranked.length / 2)]?.score ?? 0;
   const chosen: Scored[] = [];
-  // First pass: the best commit from each milestone, so the selection covers the whole history.
+  // First pass: the best commit of each milestone, so the selection spans the
+  // history, but only where that commit is competitive with the rest.
   for (const milestone of milestones) {
-    if (chosen.length >= count) break;
-    const best = ranked.find((entry) => milestoneOf.get(entry.commit.sha) === milestone && !chosen.includes(entry));
-    if (best) chosen.push(best);
+    const best = ranked.find((entry) => milestoneOf.get(entry.commit.sha) === milestone);
+    if (best && best.score >= median) chosen.push(best);
   }
   chosen.sort((a, b) => b.score - a.score || a.index - b.index);
   chosen.splice(count);
