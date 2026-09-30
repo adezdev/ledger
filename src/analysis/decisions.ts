@@ -14,10 +14,14 @@ const MAX_COMMIT_DECISIONS = 10;
 const MAX_INFERRED_DECISIONS = 10;
 
 /**
- * Headings that introduce design rationale. A "Why ...?" heading counts only
- * as a question, so motivational sections such as "Why it exists" do not.
+ * Headings that introduce design rationale: "Decisions", "Key design
+ * decisions", "Trade-offs", "Design principles", and questions such as
+ * "Why Bun?". The whole heading must be about decisions, so a section like
+ * "Decisions (src/decisions.ts)" that documents code does not qualify, and a
+ * "Why ...?" heading must be a question, so "Why it exists" does not either.
  */
-const DECISION_HEADING = /\b(decisions?|rationale|trade-?offs?|design (choices|principles|notes|goals)|principles|architectural choices)\b|^why\b.*\?$/i;
+const DECISION_HEADING =
+  /^(?:(?:key|core|main|major|notable|important|design|technical|architecture|architectural|engineering|product|implementation)\s+)*(?:decisions?|decision log|choices|trade-?offs|rationale|principles)$|^why\b.*\?$/i;
 
 /** Decisions stated in architecture decision records and design sections of documentation. */
 export function decisionsFromDocuments(documents: ReadonlyMap<string, string>, log: EvidenceLog): DecisionDraft[] {
