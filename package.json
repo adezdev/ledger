@@ -22,6 +22,7 @@
   "scripts": {
     "ledger": "bun ./src/cli/main.ts",
     "check": "tsc --noEmit",
+    "compile": "bun build ./src/cli/main.ts --compile --minify --sourcemap --outfile dist/ledger",
     "test": "bun test"
   },
   "engines": {
