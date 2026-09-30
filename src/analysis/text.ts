@@ -163,10 +163,34 @@ export function stripInlineMarkdown(text: string): string {
     .trim();
 }
 
+const BLOCK_START = /^\s*([-*+>]|\d+[.)]|#{1,6}\s|```|~~~)/;
+
+/**
+ * Joins hard-wrapped lines (as in commit bodies wrapped at 72 columns) into
+ * logical lines. List items, headings, quotes, and fences start a new line.
+ */
+export function unwrapLines(text: string): string[] {
+  const lines: string[] = [];
+  let current = "";
+  for (const line of text.split(/\r?\n/)) {
+    if (line.trim() === "") {
+      if (current) lines.push(current);
+      current = "";
+    } else if (current === "" || BLOCK_START.test(line)) {
+      if (current) lines.push(current);
+      current = line.trim();
+    } else {
+      current += ` ${line.trim()}`;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
 /** Splits prose into sentences. Code spans are protected from splitting. */
 export function sentences(text: string): string[] {
   const result: string[] = [];
-  for (const line of text.split(/\n+/)) {
+  for (const line of unwrapLines(text)) {
     const cleaned = line.replace(/^\s*([-*+>]|\d+[.)])\s+/, "").trim();
     if (cleaned === "") continue;
     const parts = cleaned.match(/(?:`[^`]*`|[^.!?`]|[.!?](?=\S))+[.!?]*/g) ?? [cleaned];
