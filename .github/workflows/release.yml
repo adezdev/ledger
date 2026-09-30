@@ -1,0 +1,134 @@
+name: Release
+
+# Pushing a tag such as v0.1.0 builds, tests, and publishes a release.
+# Running the workflow manually does everything except publish, as a dry run.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  BUN_VERSION: 1.4.2
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      - run: bun test
+      - name: Check that the tag matches package.json
+        id: version
+        run: |
+          version=$(bun -e 'console.log((await Bun.file("package.json").json()).version)')
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  # Each executable is built on the platform it targets, so it can be signed
+  # where needed and smoke-tested before anything is published.
+  build:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: bun-linux-x64-baseline, asset: ledger-linux-x64 }
+          - { os: ubuntu-24.04-arm, target: bun-linux-arm64, asset: ledger-linux-arm64 }
+          - { os: macos-15-intel, target: bun-darwin-x64-baseline, asset: ledger-darwin-x64 }
+          - { os: macos-latest, target: bun-darwin-arm64, asset: ledger-darwin-arm64 }
+          - { os: windows-latest, target: bun-windows-x64-baseline, asset: ledger-windows-x64.exe }
+          - { os: windows-11-arm, target: bun-windows-arm64, asset: ledger-windows-arm64.exe }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - name: Build
+        run: bun build ./src/cli/main.ts --compile --minify --sourcemap --target=${{ matrix.target }} --outfile "dist/${{ matrix.asset }}"
+      - name: Sign (ad hoc)
+        if: runner.os == 'macOS'
+        run: |
+          codesign --force --sign - "dist/${{ matrix.asset }}"
+          codesign --verify --verbose "dist/${{ matrix.asset }}"
+      - name: Smoke test
+        run: |
+          bin="dist/${{ matrix.asset }}"
+          actual=$("$bin" --version | tr -d '\r')
+          if [[ "$actual" != "${{ needs.verify.outputs.version }}" ]]; then
+            echo "::error::Expected version ${{ needs.verify.outputs.version }}, got $actual"
+            exit 1
+          fi
+          "$bin" analyze . --out "$RUNNER_TEMP/report" --format all
+          for file in report.md report.html report.json; do test -s "$RUNNER_TEMP/report/$file"; done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: [verify, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: ledger-*
+          path: dist
+          merge-multiple: true
+      - name: Write checksums
+        working-directory: dist
+        run: sha256sum ledger-* | tee SHA256SUMS
+      - name: Extract release notes from CHANGELOG.md
+        run: |
+          version="${{ needs.verify.outputs.version }}"
+          awk -v heading="## [$version]" '
+            index($0, heading) == 1 { found = 1; next }
+            found && /^## \[/ { exit }
+            found && !/^\[[^]]+\]: / { print }
+          ' CHANGELOG.md > notes.md
+          if [[ ! -s notes.md ]]; then
+            echo "::error::CHANGELOG.md has no section for $version"
+            exit 1
+          fi
+          cat >> notes.md <<'NOTES'
+
+          ### Install
+
+          Download the executable for your platform below, make it executable (`chmod +x` on Linux and macOS), and put it on your `PATH`. Ledger needs Git installed. Verify a download with `sha256sum --check --ignore-missing SHA256SUMS`.
+
+          The executables are not notarized or code-signed with a developer certificate. On macOS, clear the quarantine flag of a browser download with `xattr -d com.apple.quarantine ledger-darwin-*`; on Windows, SmartScreen may ask for confirmation.
+          NOTES
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "Ledger $GITHUB_REF_NAME" --notes-file notes.md --verify-tag
