@@ -1,3 +1,4 @@
+import { subjectText } from "../analysis/commits.ts";
 import { joinWords } from "../analysis/engineering.ts";
 import { areaOf } from "../analysis/paths.ts";
 import type { EvidenceLog } from "../domain/evidence.ts";
@@ -9,7 +10,7 @@ export const MAX_MILESTONES = 12;
 
 /** How milestones are formed; shown to readers so the grouping can be judged. */
 export const MILESTONE_METHOD =
-  "Adjacent commits were grouped by shared scopes and directories, commit type, and time proximity; a tagged commit usually ends a milestone. The grouping is Ledger's interpretation of the history.";
+  "Adjacent commits were grouped by shared scopes and directories, commit type, and time proximity; a tagged commit usually ends a milestone. Merges, release bookkeeping, and very small commits stay with the work before them. The grouping is Ledger's interpretation of the history.";
 
 const WEIGHTS = { topic: 1.0, kind: 0.4, time: 1.2, size: 0.8, tag: 1.5 };
 /** Gap (in hours) at which the time component of the merge cost saturates: two weeks. */
@@ -17,6 +18,10 @@ const TIME_SATURATION_HOURS = 24 * 14;
 /** Below the target count, neighbors merge only if this close in time and topic. */
 const RELATED_GAP_HOURS = 12;
 const RELATED_TOPIC_SIMILARITY = 0.5;
+/** Groups of at most this many commits, with under this share of an average milestone's changed lines, join a neighbor. */
+const CRUMB_COMMITS = 2;
+const CRUMB_SHARE = 0.1;
+const CRUMB_GAP_HOURS = 24 * 7;
 
 interface Group {
   index: number;
@@ -30,6 +35,29 @@ interface Group {
   alive: boolean;
   previous: Group | null;
   next: Group | null;
+}
+
+const MINOR_COMMIT_LINES = 5;
+const MINOR_COMMIT_FILES = 2;
+
+/**
+ * Commits that belong with the work before them rather than starting a
+ * milestone: merges (no diff of their own), release bookkeeping, and very
+ * small untagged changes such as a one-line CI bump.
+ */
+export function ridesAlong(commit: CommitSummary, taggedShas: ReadonlySet<string>): boolean {
+  if (commit.isMerge || isReleaseBookkeeping(commit)) return true;
+  const small = commit.additions + commit.deletions <= MINOR_COMMIT_LINES && commit.filesChanged <= MINOR_COMMIT_FILES;
+  return small && !taggedShas.has(commit.sha);
+}
+
+const RELEASE_SUBJECT = /^(release\b|bump(ed)? (the )?version|version bump|prepare(s|d)?\b.*\b(release|v?\d+\.\d+)|v?\d+\.\d+\.\d+(-[\w.]+)?$)/i;
+
+/** Version bumps and release preparation: real commits, but not the work a milestone is about. */
+export function isReleaseBookkeeping(commit: CommitSummary): boolean {
+  if (commit.classification.scope === "release") return true;
+  if (!["chore", "build", "other"].includes(commit.classification.kind)) return false;
+  return RELEASE_SUBJECT.test(subjectText(commit.subject));
 }
 
 /** Most milestones Ledger forms by forced merging: roughly the square root of the commit count, capped. */
@@ -46,13 +74,12 @@ export function groupCommits(commits: readonly CommitSummary[], taggedShas: Read
   const units: CommitSummary[][] = [];
   for (const commit of commits) {
     const last = units.at(-1);
-    // Merge commits carry no diff of their own; they belong with the work before them.
-    if (commit.isMerge && last) last.push(commit);
+    if (last && ridesAlong(commit, taggedShas)) last.push(commit);
     else units.push([commit]);
   }
   if (units.length <= 1) return units;
 
-  const target = targetMilestoneCount(commits.filter((commit) => !commit.isMerge).length);
+  const target = targetMilestoneCount(units.length);
   const total = commits.length;
   const groups: Group[] = units.map((unit, index) => createGroup(unit, index, taggedShas));
   groups.forEach((group, index) => {
@@ -67,6 +94,9 @@ export function groupCommits(commits: readonly CommitSummary[], taggedShas: Read
   };
   for (const group of groups) consider(group, group.next);
 
+  // A group this small (in commits and changed lines) is a crumb, not a milestone.
+  const totalChurn = commits.reduce((sum, commit) => sum + commit.additions + commit.deletions, 0);
+  const crumbChurn = (CRUMB_SHARE * totalChurn) / target;
   let remaining = groups.length;
   for (;;) {
     const candidate = heap.pop();
@@ -75,7 +105,7 @@ export function groupCommits(commits: readonly CommitSummary[], taggedShas: Read
     if (!left.alive || !right.alive || left.version !== candidate.leftVersion || right.version !== candidate.rightVersion) continue;
     // Above the target, the cheapest merge always happens. Below it, only
     // neighbors that clearly continue the same work are merged.
-    if (remaining <= target && !clearlyRelated(left, right)) continue;
+    if (remaining <= target && !clearlyRelated(left, right) && !absorbsCrumb(left, right, crumbChurn)) continue;
     absorb(left, right);
     remaining--;
     consider(left.previous, left);
@@ -103,7 +133,7 @@ function createGroup(commits: CommitSummary[], index: number, taggedShas: Readon
     next: null,
   };
   for (const commit of commits) {
-    if (commit.isMerge) continue;
+    if (ridesAlong(commit, taggedShas) && commits.length > 1) continue;
     addWeights(group.topics, commitTopics(commit));
     group.kinds.set(commit.classification.kind, (group.kinds.get(commit.classification.kind) ?? 0) + 1);
   }
@@ -148,6 +178,18 @@ function mergeCost(left: Group, right: Group, total: number): number {
     WEIGHTS.size * size +
     (left.endsWithTag ? WEIGHTS.tag : 0)
   );
+}
+
+/** Merges a crumb into a neighbor unless a tag or a long pause separates them. */
+function absorbsCrumb(left: Group, right: Group, crumbChurn: number): boolean {
+  const gapHours = Math.max(0, right.start - left.end) / 3_600_000;
+  if (left.endsWithTag || gapHours > CRUMB_GAP_HOURS) return false;
+  return isCrumb(left, crumbChurn) || isCrumb(right, crumbChurn);
+}
+
+function isCrumb(group: Group, crumbChurn: number): boolean {
+  const churn = group.commits.reduce((sum, commit) => sum + commit.additions + commit.deletions, 0);
+  return group.commits.length <= CRUMB_COMMITS && churn < crumbChurn;
 }
 
 function clearlyRelated(left: Group, right: Group): boolean {
@@ -291,12 +333,16 @@ export function buildMilestones(commits: readonly CommitSummary[], tags: readonl
   for (const tag of tags) tagsBySha.set(tag.sha, [...(tagsBySha.get(tag.sha) ?? []), tag.name]);
   const groups = groupCommits(commits, new Set(tagsBySha.keys()));
 
+  const tagged = new Set(tagsBySha.keys());
   return groups.map((group, index): Milestone => {
     const id = `M${index + 1}`;
     const work = group.filter((commit) => !commit.isMerge);
+    // Titles and themes describe the substantive commits, not bookkeeping that rode along.
+    const substantive = work.filter((commit) => !ridesAlong(commit, tagged));
+    const described = substantive.length > 0 ? substantive : work;
     const kinds: Partial<Record<CommitKind, number>> = {};
     for (const commit of group) kinds[commit.classification.kind] = (kinds[commit.classification.kind] ?? 0) + 1;
-    const themes = milestoneThemes(work);
+    const themes = milestoneThemes(described);
     const groupTags = group.flatMap((commit) => tagsBySha.get(commit.sha) ?? []);
     const additions = work.reduce((sum, commit) => sum + commit.additions, 0);
     const deletions = work.reduce((sum, commit) => sum + commit.deletions, 0);
@@ -321,7 +367,7 @@ export function buildMilestones(commits: readonly CommitSummary[], tags: readonl
       }),
     ];
 
-    const label = workLabel(work);
+    const label = workLabel(described);
     const shownThemes = themes.filter((theme) => {
       const kind = REDUNDANT_THEMES[topicKey(theme)];
       return !kind || !label.toLowerCase().includes(KIND_LABELS[kind].toLowerCase());
@@ -331,7 +377,7 @@ export function buildMilestones(commits: readonly CommitSummary[], tags: readonl
     const themeText = others > 0 ? `${named.join(", ")}, and ${others} other area${others === 1 ? "" : "s"}` : joinWords(named);
     const title = [groupTags.at(-1), `${label}${named.length > 0 ? `: ${themeText}` : ""}`].filter(Boolean).join(" · ");
     const span = formatDate(startAt) === formatDate(endAt) ? `on ${formatDate(startAt)}` : `from ${formatDate(startAt)} to ${formatDate(endAt)}`;
-    const areas = topAreas(work).map(describeArea);
+    const areas = topAreas(described).map(describeArea);
     const summaryParts = [
       `${group.length} commit${group.length === 1 ? "" : "s"} ${span}: ${describeKinds(kinds)}.`,
       areas.length > 0 ? `Most changed: ${joinWords(areas)}.` : "",
