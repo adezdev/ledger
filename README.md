@@ -14,15 +14,17 @@ Ledger does the tedious part and keeps itself honest. It reports what it can est
 
 ## Example
 
+This is Ledger run on its own repository:
+
 ```console
 $ ledger analyze .
 Ledger 0.1.0
 
   Project   ledger (TypeScript, Bun)
-  Commits   24 analyzed on main at 3e1f0c2
+  Commits   28 analyzed on main at ba76881
   Timespan  Sep 29, 2026
-  Evidence  96 items: 71 observed, 17 documented, 8 inferred
-  Timeline  5 milestones, 14 decisions (13 documented, 1 inferred)
+  Evidence  42 items: 26 observed, 10 documented, 6 inferred
+  Timeline  5 milestones, 10 decisions (9 documented, 1 inferred)
   Wrote     .ledger/report.md
             .ledger/report.html
             .ledger/report.json
